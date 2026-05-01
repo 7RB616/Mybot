@@ -1,100 +1,137 @@
+const fs = require("fs");
+const express = require("express");
 const {
-Client,
-GatewayIntentBits,
-PermissionsBitField,
-EmbedBuilder
-} = require('discord.js');
+  Client,
+  GatewayIntentBits,
+  REST,
+  Routes,
+  SlashCommandBuilder
+} = require("discord.js");
+
+const app = express();
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
+const SECRET_KEY = process.env.SECRET_KEY;
+
+let links = {};
+let codes = {};
+
+if (fs.existsSync("links.json")) {
+  links = JSON.parse(fs.readFileSync("links.json", "utf8"));
+}
+
+function saveLinks() {
+  fs.writeFileSync("links.json", JSON.stringify(links, null, 2));
+}
 
 const client = new Client({
-intents: [
-GatewayIntentBits.Guilds,
-GatewayIntentBits.GuildMembers,
-GatewayIntentBits.GuildMessages,
-GatewayIntentBits.MessageContent
-]
+  intents: [GatewayIntentBits.Guilds]
 });
 
-// 👇 ايدي الرتبة المطلوبة
-const TARGET_ROLE_ID = "1459620766587813888";
+const commands = [
+  new SlashCommandBuilder()
+    .setName("verify")
+    .setDescription("ربط حسابك مع خادم MTA")
+    .addStringOption(option =>
+      option
+        .setName("code")
+        .setDescription("كود الربط من داخل الخادم")
+        .setRequired(true)
+    )
+].map(cmd => cmd.toJSON());
 
-client.once('ready', () => {
-console.log(✅ Logged in as ${client.user.tag});
+client.once("ready", async () => {
+  console.log(`Bot logged in as ${client.user.tag}`);
+
+  const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+
+  await rest.put(
+    Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+    { body: commands }
+  );
+
+  console.log("Slash commands registered");
 });
 
-client.on('messageCreate', async (message) => {
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-if (!message.guild) return;
-if (message.author.bot) return;
+  if (interaction.commandName === "verify") {
+    const code = interaction.options.getString("code");
+    const data = codes[code];
 
-/* ================== أمر الإيمبد ================== */
+    if (!data) {
+      return interaction.reply({
+        content: "❌ الكود غير صحيح أو منتهي.",
+        ephemeral: true
+      });
+    }
 
-if (message.content.startsWith("!embed")) {
+    links[data.serial] = interaction.user.id;
+    saveLinks();
 
-if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {  
-  return;  
-}  
+    delete codes[code];
 
-const content = message.content.slice(7).trim();  
-if (!content) return;  
+    await interaction.reply({
+      content: "✅ تم ربط حسابك بنجاح.",
+      ephemeral: true
+    });
 
-await message.delete().catch(() => {});  
-
-const embed = new EmbedBuilder()  
-  .setColor("#8B4513") // بني  
-  .setDescription(content)  
-  .setFooter({ text: message.guild.name })  
-  .setTimestamp();  
-
-return message.channel.send({ embeds: [embed] });
-
-}
-
-/* ================== أمر تعديل الرتب ================== */
-
-if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-return;
-}
-
-if (message.content !== "!resetroles confirm") return;
-
-const role = message.guild.roles.cache.get(TARGET_ROLE_ID);
-if (!role) return message.reply("❌ الرتبة غير موجودة.");
-
-const botMember = message.guild.members.me;
-
-if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
-return message.reply("❌ البوت ما عنده Manage Roles.");
-}
-
-if (botMember.roles.highest.position <= role.position) {
-return message.reply(
-❌ ترتيب الرتب غلط.\n\n +
-🔹 رتبة البوت: ${botMember.roles.highest.position}\n +
-🔹 الرتبة المطلوبة: ${role.position}\n\n +
-لازم ترفع رتبة البوت فوق الرتبة المطلوبة.
-);
-}
-
-await message.reply("🚨 بدأ التنفيذ...");
-
-await message.guild.members.fetch();
-
-for (const member of message.guild.members.cache.values()) {
-try {
-
-if (member.id === message.guild.ownerId) continue;  
-
-  await member.roles.set([role]);  
-
-} catch (err) {  
-  console.log(`❌ فشل عند: ${member.user.tag}`);  
-  console.log(err);  
-}
-
-}
-
-message.channel.send("✅ تم إعطاء الرتبة للجميع بنجاح.");
+    try {
+      await interaction.user.send("✅ تم ربط حسابك مع خادم MTA بنجاح.");
+    } catch {}
+  }
 });
 
-require("dotenv").config();
+app.get("/", (req, res) => {
+  res.send("MTA Discord API is running");
+});
+
+app.post("/generate-code", (req, res) => {
+  const { key, serial, playerName, code } = req.body;
+
+  if (key !== SECRET_KEY) {
+    return res.status(403).json({ error: "Unauthorized" });
+  }
+
+  if (!serial || !code) {
+    return res.status(400).json({ error: "Missing serial or code" });
+  }
+
+  codes[String(code)] = {
+    serial,
+    playerName: playerName || "Unknown",
+    createdAt: Date.now()
+  };
+
+  res.json({ success: true, message: "Code stored" });
+});
+
+app.post("/send-dm", async (req, res) => {
+  const { key, serial, message } = req.body;
+
+  if (key !== SECRET_KEY) {
+    return res.status(403).json({ error: "Unauthorized" });
+  }
+
+  const discordId = links[serial];
+
+  if (!discordId) {
+    return res.status(404).json({ error: "Player not linked" });
+  }
+
+  try {
+    const user = await client.users.fetch(discordId);
+    await user.send(message || "رسالة من خادم MTA");
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to send DM" });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`API running on port ${PORT}`);
+});
+
 client.login(process.env.TOKEN);
