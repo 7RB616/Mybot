@@ -18,8 +18,6 @@ require("dotenv").config();
 const TOKEN = process.env.TOKEN;
 
 // ================== IDS ==================
-const GUILD_ID = "1407111299942584400";
-
 const ACTIVATION_CHANNEL_ID = "1500163233900662854";
 const ACTIVATION_LOG_CHANNEL_ID = "1500163934252961833";
 const WARN_LOG_CHANNEL_ID = "1486488232890990704";
@@ -64,11 +62,9 @@ const STAFF_RANKS = [...ADMIN_RANKS, ...SUPPORT_RANKS];
 const ALL_STAFF_ROLES = [...STAFF_RANKS, "Admin Team", "Support Team"];
 const WARN_ROLES = ["Warn 1#", "Warn 2#", "Warn 3#"];
 
-// ================== FILES ==================
 const POINTS_FILE = "./points.json";
 const WARNS_FILE = "./warns.json";
 
-// ================== CLIENT ==================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -82,7 +78,6 @@ const client = new Client({
 
 const requests = new Map();
 
-// ================== FUNCTIONS ==================
 function loadJson(file) {
   if (!fs.existsSync(file)) fs.writeFileSync(file, "{}");
   return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -156,7 +151,6 @@ async function applyStaffRank(member, rank) {
   await member.roles.add(rolesToAdd.filter(Boolean)).catch(() => null);
 }
 
-// ================== READY ==================
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
@@ -175,15 +169,11 @@ client.once("ready", async () => {
       .setStyle(ButtonStyle.Primary)
   );
 
-  await channel.send({ embeds: [embed], components: [row] });
+  await channel.send({ embeds: [embed], components: [row] }).catch(() => null);
 });
 
-// ================== INTERACTIONS ==================
 client.on("interactionCreate", async (interaction) => {
-
-  // ================== BUTTONS ==================
   if (interaction.isButton()) {
-
     if (interaction.customId.startsWith("view_evidence_")) {
       const warnId = interaction.customId.replace("view_evidence_", "");
       const warns = loadJson(WARNS_FILE);
@@ -253,32 +243,28 @@ client.on("interactionCreate", async (interaction) => {
 
       const parts = interaction.customId.split("_");
       const userId = parts[2];
+      const reportId = parts[3];
 
-      const member = await interaction.guild.members.fetch(userId).catch(() => null);
-      if (!member) return interaction.reply({ content: "ما قدرت ألقى الإداري.", ephemeral: true });
+      const reportMessage = await interaction.channel.messages.fetch(reportId).catch(() => null);
+
+      await interaction.deferUpdate().catch(() => null);
 
       if (interaction.customId.startsWith("approve_report_")) {
-        const total = addPoints(userId, 2);
+        addPoints(userId, 2);
 
-        await member.send(
-          `✅ تم قبول تقريرك وإضافة **2** نقاط.\nمجموع نقاطك الآن: **${total}**`
-        ).catch(() => null);
+        if (reportMessage) {
+          await reportMessage.react("✅").catch(() => null);
+        }
 
-        return interaction.update({
-          content: `✅ تم قبول التقرير بواسطة ${interaction.user}\nتم إضافة **2** نقاط لـ ${member}`,
-          embeds: interaction.message.embeds,
-          components: []
-        });
+        return interaction.message.delete().catch(() => null);
       }
 
       if (interaction.customId.startsWith("reject_report_")) {
-        await member.send("❌ تم رفض تقريرك من قبل المسؤول.").catch(() => null);
+        if (reportMessage) {
+          await reportMessage.react("❌").catch(() => null);
+        }
 
-        return interaction.update({
-          content: `❌ تم رفض التقرير بواسطة ${interaction.user}`,
-          embeds: interaction.message.embeds,
-          components: []
-        });
+        return interaction.message.delete().catch(() => null);
       }
     }
 
@@ -311,7 +297,9 @@ client.on("interactionCreate", async (interaction) => {
       const data = requests.get(channelId);
 
       if (!data) return interaction.reply({ content: "ما لقيت طلبك.", ephemeral: true });
-      if (interaction.user.id !== data.userId) return interaction.reply({ content: "هذا الزر مو لك.", ephemeral: true });
+      if (interaction.user.id !== data.userId) {
+        return interaction.reply({ content: "هذا الزر مو لك.", ephemeral: true });
+      }
 
       if (!isValidForm(data.formText)) {
         return interaction.reply({
@@ -450,7 +438,7 @@ client.on("interactionCreate", async (interaction) => {
           content: `${member} هذا روم التواصل الخاص بك.`
         });
 
-        await member.send("Eleven Roleplay يرحب بك في طاقم الإداري").catch(() => null);
+        await member.send("West Roleplay يرحب بك في طاقم الإداري").catch(() => null);
 
         await interaction.update({
           content: `✅ تم قبول طلب ${member}\nتم إنشاء الكاتجوري والرومات الخاصة به.`,
@@ -474,7 +462,6 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // ================== SELECT MENU ==================
   if (interaction.isStringSelectMenu()) {
     if (interaction.customId !== "select_role") return;
 
@@ -555,13 +542,12 @@ client.on("interactionCreate", async (interaction) => {
       components: [row]
     });
 
-    await interaction.reply({
+    return interaction.reply({
       content: `تم فتح روم التفعيل الخاص بك: ${channel}`,
       ephemeral: true
     });
   }
 
-  // ================== SLASH COMMANDS ==================
   if (interaction.isChatInputCommand()) {
     if (!isAdmin(interaction)) {
       return interaction.reply({ content: "ما عندك صلاحية.", ephemeral: true });
@@ -641,26 +627,144 @@ client.on("interactionCreate", async (interaction) => {
         .setColor("Red")
         .setTimestamp();
 
-     const row = new ActionRowBuilder().addComponents(
-  new ButtonBuilder()
-    .setCustomId(`approve_report_${message.author.id}_${reportId}`)
-    .setLabel("قبول التقرير")
-    .setStyle(ButtonStyle.Success),
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`view_evidence_${warnId}`)
+          .setLabel("عرض الدليل")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`cancel_warn_${warnId}`)
+          .setLabel("إلغاء التحذير")
+          .setStyle(ButtonStyle.Danger)
+      );
 
-  new ButtonBuilder()
-    .setCustomId(`reject_report_${message.author.id}_${reportId}`)
-    .setLabel("رفض التقرير")
-    .setStyle(ButtonStyle.Danger)
-);
+      const warnLog = await client.channels.fetch(WARN_LOG_CHANNEL_ID).catch(() => null);
 
-await message.channel.send({
-  content: "تصحيح التقرير:",
-  embeds: [embed],
-  components: [row]
+      if (warnLog) {
+        await warnLog.send({
+          embeds: [embed],
+          components: [row]
+        });
+      }
+
+      await member.send(`⚠️ تم إعطاؤك **${warnRoleName}**\nالسبب: ${reason}`).catch(() => null);
+
+      return interaction.reply({
+  content: `✅ تم إصدار ${warnRoleName} لـ ${member}`,
+  ephemeral: true
+});
+      }
+
+    if (interaction.commandName === "clearwarns") {
+      const user = interaction.options.getUser("user");
+      const reason = interaction.options.getString("reason");
+
+      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      if (!member) return interaction.reply({ content: "ما قدرت ألقى العضو.", ephemeral: true });
+
+      const warnRoleIds = WARN_ROLES.map(r => ROLES[r]).filter(Boolean);
+      await member.roles.remove(warnRoleIds).catch(() => null);
+
+      return interaction.reply({
+        content: `✅ تم إزالة جميع التحذيرات من ${member}`,
+        ephemeral: true
+      });
+    }
+
+    if (interaction.commandName === "resign") {
+      const user = interaction.options.getUser("user");
+      const reason = interaction.options.getString("reason");
+      const lastRank = interaction.options.getString("last_rank");
+
+      const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+      if (!member) {
+        return interaction.reply({ content: "ما قدرت ألقى الإداري.", ephemeral: true });
+      }
+
+      const archiveCategory = await interaction.guild.channels.fetch(ARCHIVE_CATEGORY_ID).catch(() => null);
+      if (!archiveCategory) {
+        return interaction.reply({ content: "ما قدرت ألقى كاتجوري الأرشيف.", ephemeral: true });
+      }
+
+      const oldCategory = interaction.guild.channels.cache.find(
+        ch =>
+          ch.type === ChannelType.GuildCategory &&
+          ch.name.includes(member.user.username)
+      );
+
+      if (!oldCategory) {
+        return interaction.reply({ content: "ما لقيت كاتجوري الإداري.", ephemeral: true });
+      }
+
+      const staffChannels = interaction.guild.channels.cache.filter(ch =>
+        ch.parentId === oldCategory.id &&
+        ch.type === ChannelType.GuildText
+      );
+
+      for (const [, ch] of staffChannels) {
+        await ch.setParent(ARCHIVE_CATEGORY_ID).catch(() => null);
+
+        await ch.send({
+          content:
+            `📦 تم أرشفة الروم\n` +
+            `الإداري: ${user}\n` +
+            `الرتبة الأخيرة: ${lastRank}\n` +
+            `السبب: ${reason}`
+        }).catch(() => null);
+      }
+
+      await oldCategory.delete().catch(() => null);
+
+      const rolesToRemove = [
+        ...ALL_STAFF_ROLES,
+        ...WARN_ROLES
+      ].map(r => ROLES[r]).filter(Boolean);
+
+      await member.roles.remove(rolesToRemove).catch(() => null);
+      await member.kick(`Resigned - ${reason}`).catch(() => null);
+
+      return interaction.reply({
+        content: `✅ تم تسليم رتبة ${user}`,
+        ephemeral: true
+      });
+    }
+  }
 });
 
-return message.reply("تم إرسال تقريرك للتصحيح في نفس الروم.");
-}
+// ================== MESSAGE CREATE ==================
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+
+  if (message.channel.name.startsWith("report-")) {
+    if (message.content.length < 5 && !message.attachments.first()) return;
+
+    const reportId = message.id;
+
+    const embed = new EmbedBuilder()
+      .setTitle("تقرير جديد")
+      .setColor("Yellow")
+      .addFields(
+        { name: "الإداري", value: `${message.author}`, inline: true },
+        { name: "التقرير", value: message.content || "بدون نص" }
+      );
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`approve_report_${message.author.id}_${reportId}`)
+        .setLabel("قبول")
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId(`reject_report_${message.author.id}_${reportId}`)
+        .setLabel("رفض")
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    await message.channel.send({
+      embeds: [embed],
+      components: [row]
+    });
+  }
 });
 
 // ================== LOGIN ==================
