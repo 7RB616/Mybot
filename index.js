@@ -301,17 +301,7 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "هذا الزر مو لك.", ephemeral: true });
       }
 
-      if (!isValidForm(data.formText)) {
-        return interaction.reply({
-          content:
-            "لازم تعبي النموذج كامل بنفس الصيغة:\n```txt\nاسم حسابك :\nايديك :\nعدد ساعاتك الحالي مع ارفاق صورة :\nمن المسؤول عن قبولك :\n```",
-          ephemeral: true
-        });
-      }
-
-      if (!data.imageUrl) {
-        return interaction.reply({ content: "لازم ترفق صورة ساعاتك.", ephemeral: true });
-      }
+     
 
       const log = await client.channels.fetch(ACTIVATION_LOG_CHANNEL_ID).catch(() => null);
       if (!log) return interaction.reply({ content: "ما قدرت ألقى روم اللوق.", ephemeral: true });
