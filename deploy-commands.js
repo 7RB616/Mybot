@@ -2,7 +2,7 @@ const { REST, Routes, SlashCommandBuilder } = require("discord.js");
 require("dotenv").config();
 
 const TOKEN = process.env.TOKEN;
-const CLIENT_ID = "حط_ايدي_البوت_هنا";
+const CLIENT_ID = "1500155146217459722";
 const GUILD_ID = "1407111299942584400";
 
 const commands = [
