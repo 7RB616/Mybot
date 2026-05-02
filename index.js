@@ -641,5 +641,29 @@ client.on("interactionCreate", async (interaction) => {
         .setColor("Red")
         .setTimestamp();
 
-      const row = new ActionRowBuilder().addComponents(
-        new
+     const row = new ActionRowBuilder().addComponents(
+  new ButtonBuilder()
+    .setCustomId(`approve_report_${message.author.id}_${reportId}`)
+    .setLabel("قبول التقرير")
+    .setStyle(ButtonStyle.Success),
+
+  new ButtonBuilder()
+    .setCustomId(`reject_report_${message.author.id}_${reportId}`)
+    .setLabel("رفض التقرير")
+    .setStyle(ButtonStyle.Danger)
+);
+
+await message.channel.send({
+  content: "تصحيح التقرير:",
+  embeds: [embed],
+  components: [row]
+});
+
+return message.reply("تم إرسال تقريرك للتصحيح في نفس الروم.");
+}
+});
+
+// ================== LOGIN ==================
+client.login(TOKEN)
+  .then(() => console.log("📡 Login request sent"))
+  .catch(err => console.log("❌ Login failed:", err.message));
