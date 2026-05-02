@@ -649,21 +649,15 @@ client.on("interactionCreate", async (interaction) => {
       const warnLog = await client.channels.fetch(WARN_LOG_CHANNEL_ID).catch(() => null);
       if (warnLog) {
         const embed = new EmbedBuilder()
-          .setTitle("إزالة جميع التحذيرات")
-.setColor("Green")
-.addFields(
-  { name: "الشخص", value: `${member}`, inline: true },
-  { name: "المسؤول", value: `${interaction.user}`, inline: true },
-  { name: "السبب", value: reason }
-)
-.setTimestamp();
-        .setColor("Green")
-          .addFields(
-            { name: "الشخص", value: `${member}`, inline: true },
-            { name: "المسؤول", value: `${interaction.user}`, inline: true },
-            { name: "السبب", value: reason }
-          )
-          .setTimestamp();
+         const embed = new EmbedBuilder()
+  .setTitle("إزالة جميع التحذيرات")
+  .setColor("Green")
+  .addFields(
+    { name: "الشخص", value: `${member}`, inline: true },
+    { name: "المسؤول", value: `${interaction.user}`, inline: true },
+    { name: "السبب", value: reason }
+  )
+  .setTimestamp();
 
         await warnLog.send({ embeds: [embed] });
       }
