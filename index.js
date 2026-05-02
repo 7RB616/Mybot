@@ -17,6 +17,206 @@ const {
 require("dotenv").config();
 const TOKEN = process.env.TOKEN;
 
+// IDS
+const ACTIVATION_CHANNEL_ID = "1500163233900662854";
+const ACTIVATION_LOG_CHANNEL_ID = "1500163934252961833";
+const WARN_LOG_CHANNEL_ID = "1486488232890990704";
+
+// ROLES
+const ROLES = {
+  "MTA: Head Admin": "1473459923064193246",
+  "MTA: Lead Admin": "1473459924414758952",
+  "MTA: Senior Admin": "1473459925375127702",
+  "MTA: Adminstrator": "1473459926046212210",
+  "MTA: Trial Admin": "1473459927665217740",
+  "MTA: Support": "1473459932526280835",
+  "MTA: Helper": "1473459933478653992",
+  "ELV- S": "1473459934476894421",
+  "Admin Team": "1473459929049202811",
+  "Support Team": "1473459930789839049",
+  "Warn 1#": "1473459936481775718",
+  "Warn 2#": "1473459937513308313",
+  "Warn 3#": "1473459938633322556"
+};
+
+const ADMIN_RANKS = [
+  "MTA: Head Admin",
+  "MTA: Lead Admin",
+  "MTA: Senior Admin",
+  "MTA: Adminstrator",
+  "MTA: Trial Admin"
+];
+
+const SUPPORT_RANKS = [
+  "MTA: Support",
+  "MTA: Helper",
+  "ELV- S"
+];
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers
+  ],
+  partials: [Partials.Channel]
+});
+
+const requests = new Map();
+
+// READY
+client.once("ready", async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+
+  const channel = await client.channels.fetch(ACTIVATION_CHANNEL_ID);
+
+  const embed = new EmbedBuilder()
+    .setTitle("لوحة التفعيل الإداري")
+    .setDescription("اضغط لبدء التفعيل")
+    .setColor("Blue");
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("start_activation")
+      .setLabel("طلب تفعيل")
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  await channel.send({ embeds: [embed], components: [row] });
+});
+
+// INTERACTIONS
+client.on("interactionCreate", async (interaction) => {
+
+  // START
+  if (interaction.isButton() && interaction.customId === "start_activation") {
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId("select_role")
+      .setPlaceholder("اختر رتبتك")
+      .addOptions([
+        { label: "Head Admin", value: "MTA: Head Admin" },
+        { label: "Lead Admin", value: "MTA: Lead Admin" },
+        { label: "Senior Admin", value: "MTA: Senior Admin" },
+        { label: "Admin", value: "MTA: Adminstrator" },
+        { label: "Trial Admin", value: "MTA: Trial Admin" },
+        { label: "Support", value: "MTA: Support" },
+        { label: "Helper", value: "MTA: Helper" }
+      ]);
+
+    return interaction.reply({
+      components: [new ActionRowBuilder().addComponents(menu)],
+      ephemeral: true
+    });
+  }
+
+  // SELECT
+  if (interaction.isStringSelectMenu()) {
+    const roleName = interaction.values[0];
+    const member = interaction.member;
+
+    const channel = await interaction.guild.channels.create({
+      name: `تفعيل-${member.user.username}`,
+      type: ChannelType.GuildText
+    });
+
+    requests.set(channel.id, {
+      userId: member.id,
+      roleName
+    });
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`submit_${channel.id}`)
+        .setLabel("أتممت")
+        .setStyle(ButtonStyle.Success)
+    );
+
+    await channel.send({ content: `${member}`, components: [row] });
+
+    return interaction.reply({
+      content: `تم فتح روم: ${channel}`,
+      ephemeral: true
+    });
+  }
+
+  // SUBMIT
+  if (interaction.isButton() && interaction.customId.startsWith("submit_")) {
+    const channelId = interaction.customId.split("_")[1];
+    const data = requests.get(channelId);
+
+    if (!data) {
+      return interaction.reply({ content: "ما لقيت طلبك", ephemeral: true });
+    }
+
+    const log = await client.channels.fetch(ACTIVATION_LOG_CHANNEL_ID);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`accept_${channelId}`)
+        .setLabel("قبول")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`reject_${channelId}`)
+        .setLabel("رفض")
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    await log.send({
+      content: `<@${data.userId}> طلب تفعيل (${data.roleName})`,
+      components: [row]
+    });
+
+    return interaction.reply({ content: "تم الإرسال", ephemeral: true });
+  }
+
+  // ACCEPT
+  if (interaction.isButton() && interaction.customId.startsWith("accept_")) {
+    const channelId = interaction.customId.split("_")[1];
+    const data = requests.get(channelId);
+
+    const member = await interaction.guild.members.fetch(data.userId);
+
+    await member.roles.add(ROLES[data.roleName]);
+
+    if (ADMIN_RANKS.includes(data.roleName)) {
+      await member.roles.add(ROLES["Admin Team"]);
+    }
+
+    if (SUPPORT_RANKS.includes(data.roleName)) {
+      await member.roles.add(ROLES["Support Team"]);
+    }
+
+    const category = await interaction.guild.channels.create({
+      name: `${member.user.username} - ${data.roleName}`,
+      type: ChannelType.GuildCategory
+    });
+
+    await interaction.guild.channels.create({
+      name: member.user.username,
+      type: ChannelType.GuildText,
+      parent: category.id
+    });
+
+console.log("Bot file started...");
+
+const fs = require("fs");
+const {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  ChannelType,
+  PermissionsBitField
+} = require("discord.js");
+
+require("dotenv").config();
+const TOKEN = process.env.TOKEN;
+
 // ================== IDS ==================
 const ACTIVATION_CHANNEL_ID = "1500163233900662854";
 const ACTIVATION_LOG_CHANNEL_ID = "1500163934252961833";
@@ -70,6 +270,7 @@ const WARN_ROLES = ["Warn 1#", "Warn 2#", "Warn 3#"];
 const POINTS_FILE = "./points.json";
 const WARNS_FILE = "./warns.json";
 
+// ================== CLIENT ==================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -154,7 +355,6 @@ client.once("ready", async () => {
 
 // ================== INTERACTIONS ==================
 client.on("interactionCreate", async (interaction) => {
-  // ================== BUTTONS ==================
   if (interaction.isButton()) {
     // دليل التحذير
     if (interaction.customId.startsWith("view_evidence_")) {
@@ -205,7 +405,7 @@ client.on("interactionCreate", async (interaction) => {
       warns[warnId] = data;
       saveJson(WARNS_FILE, warns);
 
-      const embed = EmbedBuilder.from(interaction.message.embeds[0])
+      const cancelEmbed = EmbedBuilder.from(interaction.message.embeds[0])
         .setDescription(
           `~~تم إصدار تحذير إداري~~\n\n` +
           `~~الإداري: <@${data.userId}>~~\n` +
@@ -216,11 +416,10 @@ client.on("interactionCreate", async (interaction) => {
         .setColor("Green");
 
       return interaction.update({
-        embeds: [embed],
+        embeds: [cancelEmbed],
         components: []
       });
     }
-
     // قبول / رفض التقرير
     if (
       interaction.customId.startsWith("approve_report_") ||
@@ -293,7 +492,7 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "ما قدرت ألقى روم اللوق.", ephemeral: true });
       }
 
-      const embed = new EmbedBuilder()
+      const requestEmbed = new EmbedBuilder()
         .setTitle("طلب تفعيل إداري جديد")
         .setColor("Yellow")
         .addFields(
@@ -303,7 +502,7 @@ client.on("interactionCreate", async (interaction) => {
         )
         .setTimestamp();
 
-      if (data.imageUrl) embed.setImage(data.imageUrl);
+      if (data.imageUrl) requestEmbed.setImage(data.imageUrl);
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -318,16 +517,14 @@ client.on("interactionCreate", async (interaction) => {
 
       await log.send({
         content: "يوجد طلب تفعيل جديد:",
-        embeds: [embed],
+        embeds: [requestEmbed],
         components: [row]
       });
 
-      await interaction.reply({
+      return interaction.reply({
         content: "تم إرسال طلبك للإدارة.",
         ephemeral: true
       });
-
-      return;
     }
 
     // قبول / رفض التفعيل
@@ -487,7 +684,7 @@ client.on("interactionCreate", async (interaction) => {
       imageUrl: null
     });
 
-    const embed = new EmbedBuilder()
+    const formEmbed = new EmbedBuilder()
       .setTitle("نموذج التفعيل")
       .setDescription(
         `الرتبة المختارة: **${roleName}**\n\n` +
@@ -510,7 +707,7 @@ client.on("interactionCreate", async (interaction) => {
 
     await channel.send({
       content: `${member}`,
-      embeds: [embed],
+      embeds: [formEmbed],
       components: [row]
     });
 
@@ -518,8 +715,7 @@ client.on("interactionCreate", async (interaction) => {
       content: `تم فتح روم التفعيل الخاص بك: ${channel}`,
       ephemeral: true
     });
-  }
-
+        }
   // ================== SLASH COMMANDS ==================
   if (interaction.isChatInputCommand()) {
     if (!isAdmin(interaction)) {
@@ -541,7 +737,7 @@ client.on("interactionCreate", async (interaction) => {
 
       const log = await client.channels.fetch(RANK_LOG_CHANNEL_ID).catch(() => null);
       if (log) {
-        const embed = new EmbedBuilder()
+        const rankEmbed = new EmbedBuilder()
           .setTitle("تغيير رتبة إدارية")
           .setColor("Blue")
           .addFields(
@@ -552,7 +748,7 @@ client.on("interactionCreate", async (interaction) => {
           )
           .setTimestamp();
 
-        await log.send({ embeds: [embed] });
+        await log.send({ embeds: [rankEmbed] });
       }
 
       return interaction.reply({
@@ -593,7 +789,7 @@ client.on("interactionCreate", async (interaction) => {
 
       saveJson(WARNS_FILE, warns);
 
-      const embed = new EmbedBuilder()
+      const warnEmbed = new EmbedBuilder()
         .setTitle("تحذير إداري")
         .setDescription(
           `تم إصدار تحذير إداري\n\n` +
@@ -620,7 +816,7 @@ client.on("interactionCreate", async (interaction) => {
 
       if (warnLog) {
         await warnLog.send({
-          embeds: [embed],
+          embeds: [warnEmbed],
           components: [row]
         });
       }
@@ -648,18 +844,17 @@ client.on("interactionCreate", async (interaction) => {
 
       const warnLog = await client.channels.fetch(WARN_LOG_CHANNEL_ID).catch(() => null);
       if (warnLog) {
-        const embed = new EmbedBuilder()
-         const embed = new EmbedBuilder()
-  .setTitle("إزالة جميع التحذيرات")
-  .setColor("Green")
-  .addFields(
-    { name: "الشخص", value: `${member}`, inline: true },
-    { name: "المسؤول", value: `${interaction.user}`, inline: true },
-    { name: "السبب", value: reason }
-  )
-  .setTimestamp();
+        const clearEmbed = new EmbedBuilder()
+          .setTitle("إزالة جميع التحذيرات")
+          .setColor("Green")
+          .addFields(
+            { name: "الشخص", value: `${member}`, inline: true },
+            { name: "المسؤول", value: `${interaction.user}`, inline: true },
+            { name: "السبب", value: reason }
+          )
+          .setTimestamp();
 
-        await warnLog.send({ embeds: [embed] });
+        await warnLog.send({ embeds: [clearEmbed] });
       }
 
       return interaction.reply({
@@ -668,7 +863,7 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // ================== RESIGN ==================
+    // /resign
     if (interaction.commandName === "resign") {
       const user = interaction.options.getUser("user");
       const reason = interaction.options.getString("reason");
@@ -700,7 +895,6 @@ client.on("interactionCreate", async (interaction) => {
 
       for (const [, ch] of staffChannels) {
         await ch.setParent(ARCHIVE_CATEGORY_ID).catch(() => null);
-
         await ch.send({
           content:
             `📦 تم أرشفة هذا الروم\n\n` +
@@ -722,7 +916,7 @@ client.on("interactionCreate", async (interaction) => {
 
       const log = await client.channels.fetch(RANK_LOG_CHANNEL_ID).catch(() => null);
       if (log) {
-        const embed = new EmbedBuilder()
+        const resignEmbed = new EmbedBuilder()
           .setTitle("تسليم رتبة إدارية")
           .setColor("DarkRed")
           .addFields(
@@ -733,7 +927,7 @@ client.on("interactionCreate", async (interaction) => {
           )
           .setTimestamp();
 
-        await log.send({ embeds: [embed] });
+        await log.send({ embeds: [resignEmbed] });
       }
 
       return interaction.reply({
@@ -748,6 +942,87 @@ client.on("interactionCreate", async (interaction) => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
+  // حفظ بيانات نموذج التفعيل
+  const data = requests.get(message.channel.id);
+  if (data && message.author.id === data.userId) {
+    if (message.content) data.formText = message.content;
+    if (message.attachments.first()) data.imageUrl = message.attachments.first().url;
+
+    requests.set(message.channel.id, data);
+
+    return message.reply("تم حفظ ردك، إذا انتهيت اضغط زر **أتممت النموذج**.");
+  }
+
+  const args = message.content.trim().split(/\s+/);
+  const command = args.shift()?.toLowerCase();
+
+  // أوامر النقاط
+  if (command === "!addpoints") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("ما عندك صلاحية.");
+    }
+
+    const user = message.mentions.users.first();
+    const amount = parseInt(args[1]);
+
+    if (!user || isNaN(amount)) {
+      return message.reply("الاستخدام: `!addpoints @user 5`");
+    }
+
+    await message.delete().catch(() => null);
+
+    const total = addPoints(user.id, amount);
+    return message.channel.send(`✅ تم إضافة **${amount}** نقاط لـ ${user}\nالمجموع الآن: **${total}**`);
+  }
+
+  if (command === "!removepoints") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("ما عندك صلاحية.");
+    }
+
+    const user = message.mentions.users.first();
+    const amount = parseInt(args[1]);
+
+    if (!user || isNaN(amount)) {
+      return message.reply("الاستخدام: `!removepoints @user 5`");
+    }
+
+    await message.delete().catch(() => null);
+
+    const total = addPoints(user.id, -amount);
+    return message.channel.send(`✅ تم خصم **${amount}** نقاط من ${user}\nالمجموع الآن: **${total}**`);
+  }
+
+  if (command === "!points") {
+    const user = message.mentions.users.first() || message.author;
+    const total = getPoints(user.id);
+
+    return message.reply(`📌 نقاط ${user}: **${total}**`);
+  }
+
+  if (command === "!top") {
+    const pointsData = loadJson(POINTS_FILE);
+
+    const top = Object.entries(pointsData)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+
+    if (!top.length) return message.reply("ما فيه نقاط مسجلة.");
+
+    const text = top
+      .map(([userId, points], index) => `${index + 1}. <@${userId}> — **${points}** نقطة`)
+      .join("\n");
+
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("🏆 توب النقاط")
+          .setDescription(text)
+          .setColor("Gold")
+      ]
+    });
+  }
+
   // التقارير
   if (message.channel.name.startsWith("report-")) {
     if (message.content.length < 5 && !message.attachments.first()) return;
@@ -757,12 +1032,11 @@ client.on("messageCreate", async (message) => {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`approve_report_${message.author.id}_${reportId}`)
-        .setLabel("✔")
+        .setLabel("قبول")
         .setStyle(ButtonStyle.Success),
-
       new ButtonBuilder()
         .setCustomId(`reject_report_${message.author.id}_${reportId}`)
-        .setLabel("✖")
+        .setLabel("رفض")
         .setStyle(ButtonStyle.Danger)
     );
 
@@ -770,6 +1044,8 @@ client.on("messageCreate", async (message) => {
       content: "تصحيح التقرير",
       components: [row]
     });
+
+    return;
   }
 });
 
