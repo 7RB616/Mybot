@@ -135,59 +135,59 @@ async function applyStaffRank(member, rank) {
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  const { REST, Routes } = require("discord.js");
+const { REST, Routes } = require("discord.js");
 
-client.once("ready", async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+const commands = [
+  {
+    name: "warn",
+    description: "إعطاء تحذير إداري",
+    options: [
+      { name: "user", description: "الشخص", type: 6, required: true },
+      { name: "number", description: "رقم التحذير", type: 4, required: true, choices: [
+        { name: "Warn 1#", value: 1 },
+        { name: "Warn 2#", value: 2 },
+        { name: "Warn 3#", value: 3 }
+      ]},
+      { name: "reason", description: "السبب", type: 3, required: true },
+      { name: "evidence", description: "الدليل", type: 3, required: true }
+    ]
+  },
+  {
+    name: "clearwarns",
+    description: "إزالة جميع التحذيرات",
+    options: [
+      { name: "user", description: "الشخص", type: 6, required: true },
+      { name: "reason", description: "السبب", type: 3, required: true }
+    ]
+  },
+  {
+    name: "rank",
+    description: "تغيير رتبة إداري",
+    options: [
+      { name: "user", description: "الشخص", type: 6, required: true },
+      { name: "rank", description: "الرتبة الجديدة", type: 3, required: true },
+      { name: "reason", description: "السبب", type: 3, required: true }
+    ]
+  },
+  {
+    name: "resign",
+    description: "تسليم رتبة إداري",
+    options: [
+      { name: "user", description: "الإداري", type: 6, required: true },
+      { name: "reason", description: "السبب", type: 3, required: true },
+      { name: "last_rank", description: "رتبته الأخيرة", type: 3, required: true }
+    ]
+  }
+];
 
-  const commands = [
-    {
-      name: "warn",
-      description: "تحذير إداري",
-      options: [
-        { name: "user", type: 6, required: true, description: "الشخص" },
-        { name: "number", type: 4, required: true, description: "رقم التحذير" },
-        { name: "reason", type: 3, required: true, description: "السبب" },
-        { name: "evidence", type: 3, required: true, description: "الدليل" }
-      ]
-    },
-    {
-      name: "clearwarns",
-      description: "حذف التحذيرات",
-      options: [
-        { name: "user", type: 6, required: true, description: "الشخص" },
-        { name: "reason", type: 3, required: true, description: "السبب" }
-      ]
-    },
-    {
-      name: "rank",
-      description: "تغيير رتبة",
-      options: [
-        { name: "user", type: 6, required: true, description: "الشخص" },
-        { name: "rank", type: 3, required: true, description: "الرتبة" },
-        { name: "reason", type: 3, required: true, description: "السبب" }
-      ]
-    },
-    {
-      name: "resign",
-      description: "تسليم رتبة",
-      options: [
-        { name: "user", type: 6, required: true, description: "الإداري" },
-        { name: "reason", type: 3, required: true, description: "السبب" },
-        { name: "last_rank", type: 3, required: true, description: "رتبته الأخيرة" }
-      ]
-    }
-  ];
+const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-  const rest = new REST({ version: "10" }).setToken(TOKEN);
+await rest.put(
+  Routes.applicationGuildCommands(client.user.id, "1407111299942584400"),
+  { body: commands }
+);
 
-  await rest.put(
-    Routes.applicationGuildCommands(client.user.id, "1407111299942584400"),
-    { body: commands }
-  );
-
-  console.log("✅ Slash commands deployed");
-});
+console.log("✅ Slash commands deployed");
   
   const channel = await client.channels.fetch(ACTIVATION_CHANNEL_ID).catch(() => null);
   if (!channel) return console.log("❌ ما لقيت روم التفعيل");
