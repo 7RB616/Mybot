@@ -3,764 +3,573 @@ const {
   GatewayIntentBits,
   Partials,
   ChannelType,
-  PermissionsBitField,
+  PermissionFlagsBits,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
-  TextInputStyle
+  TextInputStyle,
+  SlashCommandBuilder,
+  REST,
+  Routes
 } = require("discord.js");
 
-/* =========================
-   CONFIG
-========================= */
+require("dotenv").config();
 
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
 
+const CHANNELS = {
+  activation: "1502685193201389700",
+  activationLog: "1502675972820828292",
+  warnLog: "1502685588535640195"
+};
 
-const PREFIX = "!";
+const TEAM_ROLES = {
+  highStaff: "1493305553429205183",
+  adminTeam: "1493306105240092782",
+  supportTeam: "1493306515862458368"
+};
 
-const AUTO_ROLE_ID = "1502221688450977912";
+const WARN_ROLES = {
+  1: "1493310248746745936",
+  2: "1493310287905034362",
+  3: "1493310315910140046"
+};
 
-const MENTION_CHANNELS = [
-  "CHANNEL_ID_1",
-  "CHANNEL_ID_2",
-  "CHANNEL_ID_3"
-];
+const STAFF_ROLES = {
+  "Executive Management": "1493304989794435212",
+  "Conductor Management": "1493305170854019207",
+  "Head Management": "1493305291087937676",
+  "Senior Management": "1493305338718584883",
+  "Novice Management": "1493305383534596238",
 
-const DELETE_AFTER = 5000;
+  "- Admin Manager": "1493307310540324885",
+  "- Support Manager": "1493307361467568190",
 
-/* =========================
-   CLIENT
-========================= */
+  "Executive Administrator": "1493305632768393226",
+  "Supervisor Administrator": "1493305853183262740",
+  "Senior Administrator": "1493305967993946244",
+  "Novice Administrator": "1493306037200093296",
+
+  "Support": "1493306309355901068",
+  "Senior Support": "1493306398547902525",
+  "Novice Support": "1493306470199070720"
+};
+
+const activeApplications = new Set();
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.GuildMembers
   ],
   partials: [Partials.Channel]
 });
 
-/* =========================
-   TEMPVOICE DATA
-========================= */
+const commands = [
+  new SlashCommandBuilder()
+    .setName("setup-activation")
+    .setDescription("Send activation panel")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-const tempChannels = new Map();
+  new SlashCommandBuilder()
+    .setName("warn")
+    .setDescription("Warn a staff member")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addUserOption(option =>
+      option.setName("user")
+        .setDescription("User to warn")
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName("reason")
+        .setDescription("Warning reason")
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName("evidence")
+        .setDescription("Evidence link")
+        .setRequired(false)
+    )
+].map(cmd => cmd.toJSON());
 
-/* =========================
-   READY
-========================= */
+async function registerCommands() {
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-client.once("ready", () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
+
+  console.log("Slash commands registered.");
+}
+
+client.once("ready", async () => {
+  console.log(`${client.user.tag} Ready`);
+  await registerCommands();
 });
 
-/* =========================
-   FUNCTIONS
-========================= */
-
-function isAdmin(member) {
-  return member.permissions.has(
-    PermissionsBitField.Flags.Administrator
-  );
-}
-
-function getVoice(interaction) {
-  const channel = interaction.member.voice.channel;
-
-  if (!channel) return null;
-
-  if (!tempChannels.has(channel.id)) return null;
-
-  return channel;
-}
-
-function isOwner(interaction, channel) {
-  const data = tempChannels.get(channel.id);
-
+function isHighStaff(member) {
   return (
-    data &&
-    data.ownerId === interaction.user.id
+    member.permissions.has(PermissionFlagsBits.Administrator) ||
+    member.roles.cache.has(TEAM_ROLES.highStaff)
   );
 }
 
-/* =========================
-   MEMBER JOIN
-========================= */
-
-client.on("guildMemberAdd", async (member) => {
-
-  const role =
-    member.guild.roles.cache.get(AUTO_ROLE_ID);
-
-  if (role) {
-    await member.roles.add(role).catch(() => {});
-  }
-
-  for (const channelId of MENTION_CHANNELS) {
-
-    const channel =
-      member.guild.channels.cache.get(channelId);
-
-    if (!channel) continue;
-
-    const msg =
-      await channel.send(`${member}`);
-
-    setTimeout(() => {
-      msg.delete().catch(() => {});
-    }, DELETE_AFTER);
-  }
-});
-
-/* =========================
-   MESSAGE COMMANDS
-========================= */
-
-client.on("messageCreate", async (message) => {
-
-  if (message.author.bot || !message.guild) return;
-
-  const args =
-    message.content.trim().split(/ +/);
-
-  const cmd =
-    args.shift().toLowerCase();
-
-  /* =========================
-     SETUP TEMPVOICE
-  ========================= */
-
-  if (cmd === `${PREFIX}setup-tempvoice`) {
-
-    if (!isAdmin(message.member)) {
-      return message.reply("❌ للإدارة فقط.");
-    }
-
-    const category =
-      await message.guild.channels.create({
-        name: "🔊 TEMP VOICE",
-        type: ChannelType.GuildCategory
-      });
-
-    await message.guild.channels.create({
-      name: "➕ Join To Create",
-      type: ChannelType.GuildVoice,
-      parent: category.id
-    });
-
-    const embed = new EmbedBuilder()
-      .setColor("#ffffff")
-      .setTitle("TempVoice Interface")
-      .setDescription(
-        "لوحة التحكم بالرومات الصوتية المؤقتة."
-      );
-
-    const row1 =
-      new ActionRowBuilder().addComponents(
-
-        new ButtonBuilder()
-          .setCustomId("tv_name")
-          .setLabel("Name")
-          .setEmoji("🔤")
-          .setStyle(ButtonStyle.Secondary),
-
-        new ButtonBuilder()
-          .setCustomId("tv_limit")
-          .setLabel("Limit")
-          .setEmoji("👥")
-          .setStyle(ButtonStyle.Secondary),
-
-        new ButtonBuilder()
-          .setCustomId("tv_lock")
-          .setLabel("Lock")
-          .setEmoji("🔒")
-          .setStyle(ButtonStyle.Secondary),
-
-        new ButtonBuilder()
-          .setCustomId("tv_unlock")
-          .setLabel("Unlock")
-          .setEmoji("🔓")
-          .setStyle(ButtonStyle.Secondary)
-      );
-
-    const row2 =
-      new ActionRowBuilder().addComponents(
-
-        new ButtonBuilder()
-          .setCustomId("tv_hide")
-          .setLabel("Invisible")
-          .setEmoji("🙈")
-          .setStyle(ButtonStyle.Secondary),
-
-        new ButtonBuilder()
-          .setCustomId("tv_show")
-          .setLabel("Visible")
-          .setEmoji("👁️")
-          .setStyle(ButtonStyle.Secondary),
-
-        new ButtonBuilder()
-          .setCustomId("tv_claim")
-          .setLabel("Claim")
-          .setEmoji("👑")
-          .setStyle(ButtonStyle.Secondary),
-
-        new ButtonBuilder()
-          .setCustomId("tv_delete")
-          .setLabel("Delete")
-          .setEmoji("🗑️")
-          .setStyle(ButtonStyle.Danger)
-      );
-
-    await message.channel.send({
-      embeds: [embed],
-      components: [row1, row2]
-    });
-
-    return message.reply(
-      "✅ تم إنشاء نظام TempVoice."
-    );
-  }
-
-  /* =========================
-     CLEAR
-  ========================= */
-
-  if (cmd === `${PREFIX}clear`) {
-
-    if (
-      !message.member.permissions.has(
-        PermissionsBitField.Flags.ManageMessages
-      )
-    ) {
-      return message.reply("❌ ما عندك صلاحية.");
-    }
-
-    const amount = parseInt(args[0]);
-
-    if (!amount || amount < 1 || amount > 100) {
-      return message.reply(
-        "❌ اكتب رقم من 1 إلى 100."
-      );
-    }
-
-    await message.channel.bulkDelete(amount, true);
-
-    const msg =
-      await message.channel.send(
-        `✅ تم حذف ${amount} رسالة.`
-      );
-
-    setTimeout(() => {
-      msg.delete().catch(() => {});
-    }, 3000);
-  }
-
-  /* =========================
-     LOCK / UNLOCK
-  ========================= */
-
-  if (cmd === `${PREFIX}lock`) {
-
-    if (
-      !message.member.permissions.has(
-        PermissionsBitField.Flags.ManageChannels
-      )
-    ) {
-      return message.reply("❌ ما عندك صلاحية.");
-    }
-
-    await message.channel.permissionOverwrites.edit(
-      message.guild.roles.everyone,
-      {
-        SendMessages: false
-      }
-    );
-
-    return message.reply("🔒 تم قفل الشات.");
-  }
-
-  if (cmd === `${PREFIX}unlock`) {
-
-    if (
-      !message.member.permissions.has(
-        PermissionsBitField.Flags.ManageChannels
-      )
-    ) {
-      return message.reply("❌ ما عندك صلاحية.");
-    }
-
-    await message.channel.permissionOverwrites.edit(
-      message.guild.roles.everyone,
-      {
-        SendMessages: true
-      }
-    );
-
-    return message.reply("🔓 تم فتح الشات.");
-  }
-
-  /* =========================
-     REPEAT
-  ========================= */
-
-  if (cmd === `${PREFIX}repeat`) {
-
-    if (!isAdmin(message.member)) {
-      return message.reply("❌ للإدارة فقط.");
-    }
-
-    const channel =
-      message.mentions.channels.first();
-
-    if (!channel) {
-      return message.reply("❌ منشن الروم.");
-    }
-
-    args.shift();
-
-    const text = args.join(" ");
-
-    const files =
-      message.attachments.map(att => att.url);
-
-    if (!text && files.length === 0) {
-      return message.reply(
-        "❌ اكتب رسالة أو ارفق صورة."
-      );
-    }
-
-    await channel.send({
-      content: text || null,
-      files
-    });
-
-    return message.reply("✅ تم الإرسال.");
-  }
-
-  /* =========================
-     EMBED
-  ========================= */
-
-  if (cmd === `${PREFIX}embed`) {
-
-    if (!isAdmin(message.member)) {
-      return message.reply("❌ للإدارة فقط.");
-    }
-
-    const channel =
-      message.mentions.channels.first();
-
-    if (!channel) {
-      return message.reply("❌ منشن الروم.");
-    }
-
-    args.shift();
-
-    const text = args.join(" ");
-
-    const image =
-      message.attachments.first()?.url;
-
-    if (!text && !image) {
-      return message.reply(
-        "❌ اكتب نص أو ارفق صورة."
-      );
-    }
-
-    const embed = new EmbedBuilder()
-      .setColor("#ffffff")
-      .setDescription(text || "‎");
-
-    if (image) {
-      embed.setImage(image);
-    }
-
-    await channel.send({
-      embeds: [embed]
-    });
-
-    return message.reply(
-      "✅ تم إرسال الإيمبد."
-    );
-  }
-});
-
-/* =========================
-   TEMPVOICE CREATE / DELETE
-========================= */
-
-client.on(
-  "voiceStateUpdate",
-  async (oldState, newState) => {
-
-    if (
-      newState.channel &&
-      newState.channel.name ===
-      "➕ Join To Create"
-    ) {
-
-      const voice =
-        await newState.guild.channels.create({
-          name:
-            `${newState.member.user.username}'s Voice`,
-          type: ChannelType.GuildVoice,
-          parent: newState.channel.parentId
-        });
-
-      tempChannels.set(voice.id, {
-        ownerId: newState.member.id
-      });
-
-      await newState.member.voice.setChannel(
-        voice
-      );
-    }
-
-    if (
-      oldState.channel &&
-      tempChannels.has(oldState.channel.id) &&
-      oldState.channel.members.size === 0
-    ) {
-
-      tempChannels.delete(oldState.channel.id);
-
-      await oldState.channel.delete().catch(() => {});
-    }
-  }
-);
-
-/* =========================
-   INTERACTIONS
-========================= */
-
-client.on(
-  "interactionCreate",
-  async (interaction) => {
-
-    if (interaction.isButton()) {
-
-      const channel =
-        getVoice(interaction);
-
-      if (!channel) {
-        return interaction.reply({
-          content:
-            "❌ ادخل رومك المؤقت.",
-          ephemeral: true
-        });
-      }
-
-      if (
-        interaction.customId !==
-        "tv_claim" &&
-        !isOwner(interaction, channel)
-      ) {
-        return interaction.reply({
-          content:
-            "❌ لست مالك الروم.",
-          ephemeral: true
-        });
-      }
-
-      /* LOCK */
-
-      if (
-        interaction.customId ===
-        "tv_lock"
-      ) {
-
-        await channel.permissionOverwrites.edit(
-          interaction.guild.roles.everyone,
-          {
-            Connect: false
-          }
-        );
-
-        return interaction.reply({
-          content:
-            "🔒 تم قفل الروم.",
-          ephemeral: true
-        });
-      }
-
-      /* UNLOCK */
-
-      if (
-        interaction.customId ===
-        "tv_unlock"
-      ) {
-
-        await channel.permissionOverwrites.edit(
-          interaction.guild.roles.everyone,
-          {
-            Connect: true
-          }
-        );
-
-        return interaction.reply({
-          content:
-            "🔓 تم فتح الروم.",
-          ephemeral: true
-        });
-      }
-
-      /* HIDE */
-
-      if (
-        interaction.customId ===
-        "tv_hide"
-      ) {
-
-        await channel.permissionOverwrites.edit(
-          interaction.guild.roles.everyone,
-          {
-            ViewChannel: false
-          }
-        );
-
-        return interaction.reply({
-          content:
-            "🙈 تم إخفاء الروم.",
-          ephemeral: true
-        });
-      }
-
-      /* SHOW */
-
-      if (
-        interaction.customId ===
-        "tv_show"
-      ) {
-
-        await channel.permissionOverwrites.edit(
-          interaction.guild.roles.everyone,
-          {
-            ViewChannel: true
-          }
-        );
-
-        return interaction.reply({
-          content:
-            "👁️ تم إظهار الروم.",
-          ephemeral: true
-        });
-      }
-
-      /* DELETE */
-
-      if (
-        interaction.customId ===
-        "tv_delete"
-      ) {
-
-        tempChannels.delete(channel.id);
-
-        await channel.delete().catch(() => {});
-
-        return interaction.reply({
-          content:
-            "🗑️ تم حذف الروم.",
-          ephemeral: true
-        }).catch(() => {});
-      }
-
-      /* CLAIM */
-
-      if (
-        interaction.customId ===
-        "tv_claim"
-      ) {
-
-        const data =
-          tempChannels.get(channel.id);
-
-        data.ownerId =
-          interaction.user.id;
-
-        tempChannels.set(
-          channel.id,
-          data
-        );
-
-        return interaction.reply({
-          content:
-            "👑 أصبحت مالك الروم.",
-          ephemeral: true
-        });
-      }
-
-      /* NAME */
-
-      if (
-        interaction.customId ===
-        "tv_name"
-      ) {
-
-        const modal =
-          new ModalBuilder()
-            .setCustomId(
-              "modal_name"
-            )
-            .setTitle(
-              "Change Name"
-            );
-
-        const input =
-          new TextInputBuilder()
-            .setCustomId("name")
-            .setLabel(
-              "Voice Name"
-            )
-            .setStyle(
-              TextInputStyle.Short
-            );
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            input
-          )
-        );
-
-        return interaction.showModal(
-          modal
-        );
-      }
-
-      /* LIMIT */
-
-      if (
-        interaction.customId ===
-        "tv_limit"
-      ) {
-
-        const modal =
-          new ModalBuilder()
-            .setCustomId(
-              "modal_limit"
-            )
-            .setTitle(
-              "Change Limit"
-            );
-
-        const input =
-          new TextInputBuilder()
-            .setCustomId(
-              "limit"
-            )
-            .setLabel(
-              "Voice Limit"
-            )
-            .setStyle(
-              TextInputStyle.Short
-            );
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            input
-          )
-        );
-
-        return interaction.showModal(
-          modal
-        );
-      }
-    }
-
-    /* =========================
-       MODALS
-    ========================= */
-
-    if (interaction.isModalSubmit()) {
-
-      const channel =
-        getVoice(interaction);
-
-      if (!channel) {
-        return interaction.reply({
-          content:
-            "❌ ادخل رومك المؤقت.",
-          ephemeral: true
-        });
-      }
-
-      if (
-        !isOwner(
-          interaction,
-          channel
-        )
-      ) {
-        return interaction.reply({
-          content:
-            "❌ لست مالك الروم.",
-          ephemeral: true
-        });
-      }
-
-      /* NAME */
-
-      if (
-        interaction.customId ===
-        "modal_name"
-      ) {
-
-        const name =
-          interaction.fields.getTextInputValue(
-            "name"
-          );
-
-        await channel.setName(name);
-
-        return interaction.reply({
-          content:
-            "✅ تم تغيير الاسم.",
-          ephemeral: true
-        });
-      }
-
-      /* LIMIT */
-
-      if (
-        interaction.customId ===
-        "modal_limit"
-      ) {
-
-        const limit =
-          parseInt(
-            interaction.fields.getTextInputValue(
-              "limit"
-            )
-          );
-
-        if (
-          isNaN(limit) ||
-          limit < 0 ||
-          limit > 99
-        ) {
+function getTeamRole(rankName) {
+  const supportRanks = ["Support", "Senior Support", "Novice Support"];
+  const adminRanks = [
+    "Executive Administrator",
+    "Supervisor Administrator",
+    "Senior Administrator",
+    "Novice Administrator"
+  ];
+
+  const highRanks = [
+    "Executive Management",
+    "Conductor Management",
+    "Head Management",
+    "Senior Management",
+    "Novice Management",
+    "- Admin Manager",
+    "- Support Manager"
+  ];
+
+  if (supportRanks.includes(rankName)) return TEAM_ROLES.supportTeam;
+  if (adminRanks.includes(rankName)) return TEAM_ROLES.adminTeam;
+  if (highRanks.includes(rankName)) return TEAM_ROLES.highStaff;
+
+  return null;
+}
+
+client.on("interactionCreate", async (interaction) => {
+  try {
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === "setup-activation") {
+        const channel = interaction.guild.channels.cache.get(CHANNELS.activation);
+        if (!channel) {
           return interaction.reply({
-            content:
-              "❌ رقم من 0 إلى 99.",
+            content: "Activation channel not found.",
             ephemeral: true
           });
         }
 
-        await channel.setUserLimit(
-          limit
+        const embed = new EmbedBuilder()
+          .setTitle("Staff Activation Panel")
+          .setDescription("Click the button below to start your activation request.")
+          .setColor("Blue");
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId("open_activation")
+            .setLabel("Start Activation")
+            .setStyle(ButtonStyle.Primary)
         );
 
+        await channel.send({ embeds: [embed], components: [row] });
+
         return interaction.reply({
-          content:
-            "✅ تم تغيير الحد.",
+          content: "Activation panel sent.",
+          ephemeral: true
+        });
+      }
+
+      if (interaction.commandName === "warn") {
+        const user = interaction.options.getUser("user");
+        const reason = interaction.options.getString("reason");
+        const evidence = interaction.options.getString("evidence") || "No evidence provided.";
+
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (!member) {
+          return interaction.reply({
+            content: "Member not found.",
+            ephemeral: true
+          });
+        }
+
+        let warnLevel = 1;
+
+        if (member.roles.cache.has(WARN_ROLES[2])) warnLevel = 3;
+        else if (member.roles.cache.has(WARN_ROLES[1])) warnLevel = 2;
+
+        await member.roles.add(WARN_ROLES[warnLevel]);
+
+        const warnLog = interaction.guild.channels.cache.get(CHANNELS.warnLog);
+
+        const embed = new EmbedBuilder()
+          .setTitle(`Staff Warning #${warnLevel}`)
+          .setColor("Red")
+          .addFields(
+            { name: "User", value: `<@${user.id}>`, inline: true },
+            { name: "By", value: `<@${interaction.user.id}>`, inline: true },
+            { name: "Reason", value: reason }
+          )
+          .setTimestamp();
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`show_evidence_${user.id}_${interaction.user.id}`)
+            .setLabel("Show Evidence")
+            .setStyle(ButtonStyle.Secondary),
+
+          new ButtonBuilder()
+            .setCustomId(`remove_warn_${user.id}_${warnLevel}`)
+            .setLabel("Remove Warning")
+            .setStyle(ButtonStyle.Danger)
+        );
+
+        const msg = await warnLog.send({
+          embeds: [embed],
+          components: [row]
+        });
+
+        msg.evidence = evidence;
+
+        await user.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle(`You Received Warning #${warnLevel}`)
+              .setDescription(`Reason: ${reason}`)
+              .setColor("Red")
+          ]
+        }).catch(() => {});
+
+        return interaction.reply({
+          content: `Warning #${warnLevel} has been issued to ${user}.`,
           ephemeral: true
         });
       }
     }
-  }
-);
 
-const TOKEN = process.env.TOKEN;
+    if (interaction.isButton()) {
+      if (interaction.customId === "open_activation") {
+        if (activeApplications.has(interaction.user.id)) {
+          return interaction.reply({
+            content: "You already have an active activation request.",
+            ephemeral: true
+          });
+        }
+
+        activeApplications.add(interaction.user.id);
+
+        const category = interaction.channel.parent;
+
+        const channel = await interaction.guild.channels.create({
+          name: `activation-${interaction.user.username}`,
+          type: ChannelType.GuildText,
+          parent: category?.id || null,
+          permissionOverwrites: [
+            {
+              id: interaction.guild.id,
+              deny: [PermissionFlagsBits.ViewChannel]
+            },
+            {
+              id: interaction.user.id,
+              allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory
+              ]
+            },
+            {
+              id: TEAM_ROLES.highStaff,
+              allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory
+              ]
+            }
+          ]
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle("Activation Request")
+          .setDescription("Choose your rank, then fill the form.")
+          .setColor("Blue");
+
+        const select = new StringSelectMenuBuilder()
+          .setCustomId("select_activation_rank")
+          .setPlaceholder("Select your rank")
+          .addOptions(
+            Object.keys(STAFF_ROLES).map(name => ({
+              label: name,
+              value: name
+            }))
+          );
+
+        await channel.send({
+          content: `<@${interaction.user.id}>`,
+          embeds: [embed],
+          components: [new ActionRowBuilder().addComponents(select)]
+        });
+
+        return interaction.reply({
+          content: `Activation room created: ${channel}`,
+          ephemeral: true
+        });
+      }
+
+      if (interaction.customId.startsWith("accept_activation_")) {
+        if (!isHighStaff(interaction.member)) {
+          return interaction.reply({
+            content: "You don't have permission.",
+            ephemeral: true
+          });
+        }
+
+        const parts = interaction.customId.split("_");
+        const userId = parts[2];
+        const roleId = parts[3];
+        const teamRoleId = parts[4];
+
+        const member = await interaction.guild.members.fetch(userId).catch(() => null);
+
+        if (!member) {
+          return interaction.reply({
+            content: "Member not found.",
+            ephemeral: true
+          });
+        }
+
+        await member.roles.add(roleId);
+        if (teamRoleId !== "none") await member.roles.add(teamRoleId);
+
+        await member.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle("Staff Activation Accepted")
+              .setDescription("You have been accepted into the staff team.")
+              .setColor("Green")
+          ]
+        }).catch(() => {});
+
+        activeApplications.delete(userId);
+
+        await interaction.reply({
+          content: "Activation accepted. This room will be deleted.",
+          ephemeral: true
+        });
+
+        setTimeout(() => {
+          interaction.channel.delete().catch(() => {});
+        }, 3000);
+      }
+
+      if (interaction.customId.startsWith("deny_activation_")) {
+        if (!isHighStaff(interaction.member)) {
+          return interaction.reply({
+            content: "You don't have permission.",
+            ephemeral: true
+          });
+        }
+
+        const userId = interaction.customId.split("_")[2];
+
+        const modal = new ModalBuilder()
+          .setCustomId(`deny_modal_${userId}`)
+          .setTitle("Deny Activation");
+
+        const reason = new TextInputBuilder()
+          .setCustomId("deny_reason")
+          .setLabel("Deny reason")
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(reason));
+
+        return interaction.showModal(modal);
+      }
+
+      if (interaction.customId.startsWith("show_evidence_")) {
+        const parts = interaction.customId.split("_");
+        const warnedUserId = parts[2];
+
+        const allowed =
+          interaction.user.id === warnedUserId ||
+          isHighStaff(interaction.member);
+
+        if (!allowed) {
+          return interaction.reply({
+            content: "You are not allowed to view this evidence.",
+            ephemeral: true
+          });
+        }
+
+        return interaction.reply({
+          content: "Evidence is attached in the warning record. If it was a link, check the staff log message.",
+          ephemeral: true
+        });
+      }
+
+      if (interaction.customId.startsWith("remove_warn_")) {
+        if (!isHighStaff(interaction.member)) {
+          return interaction.reply({
+            content: "You are not allowed to remove warnings.",
+            ephemeral: true
+          });
+        }
+
+        const parts = interaction.customId.split("_");
+        const userId = parts[2];
+        const warnLevel = parts[3];
+
+        const member = await interaction.guild.members.fetch(userId).catch(() => null);
+
+        if (!member) {
+          return interaction.reply({
+            content: "Member not found.",
+            ephemeral: true
+          });
+        }
+
+        await member.roles.remove(WARN_ROLES[warnLevel]).catch(() => {});
+
+        await interaction.update({
+          content: `Warning #${warnLevel} removed by <@${interaction.user.id}>.`,
+          embeds: interaction.message.embeds,
+          components: []
+        });
+      }
+    }
+
+    if (interaction.isStringSelectMenu()) {
+      if (interaction.customId === "select_activation_rank") {
+        const selectedRank = interaction.values[0];
+
+        const modal = new ModalBuilder()
+          .setCustomId(`activation_modal_${selectedRank}`)
+          .setTitle("Activation Form");
+
+        const accountName = new TextInputBuilder()
+          .setCustomId("account_name")
+          .setLabel("Account Name")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+
+        const gameId = new TextInputBuilder()
+          .setCustomId("game_id")
+          .setLabel("In-game ID")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+
+        const hours = new TextInputBuilder()
+          .setCustomId("hours")
+          .setLabel("Hours + Proof")
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true);
+
+        const acceptedBy = new TextInputBuilder()
+          .setCustomId("accepted_by")
+          .setLabel("Accepted By")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(accountName),
+          new ActionRowBuilder().addComponents(gameId),
+          new ActionRowBuilder().addComponents(hours),
+          new ActionRowBuilder().addComponents(acceptedBy)
+        );
+
+        return interaction.showModal(modal);
+      }
+    }
+
+    if (interaction.isModalSubmit()) {
+      if (interaction.customId.startsWith("activation_modal_")) {
+        const rankName = interaction.customId.replace("activation_modal_", "");
+        const roleId = STAFF_ROLES[rankName];
+        const teamRoleId = getTeamRole(rankName) || "none";
+
+        const accountName = interaction.fields.getTextInputValue("account_name");
+        const gameId = interaction.fields.getTextInputValue("game_id");
+        const hours = interaction.fields.getTextInputValue("hours");
+        const acceptedBy = interaction.fields.getTextInputValue("accepted_by");
+
+        const log = interaction.guild.channels.cache.get(CHANNELS.activationLog);
+
+        const embed = new EmbedBuilder()
+          .setTitle("New Activation Request")
+          .setColor("Blue")
+          .addFields(
+            { name: "User", value: `<@${interaction.user.id}>`, inline: true },
+            { name: "Rank", value: rankName, inline: true },
+            { name: "Account Name", value: accountName },
+            { name: "In-game ID", value: gameId },
+            { name: "Hours + Proof", value: hours },
+            { name: "Accepted By", value: acceptedBy }
+          )
+          .setTimestamp();
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`accept_activation_${interaction.user.id}_${roleId}_${teamRoleId}`)
+            .setLabel("Accept")
+            .setStyle(ButtonStyle.Success),
+
+          new ButtonBuilder()
+            .setCustomId(`deny_activation_${interaction.user.id}`)
+            .setLabel("Deny")
+            .setStyle(ButtonStyle.Danger)
+        );
+
+        await log.send({ embeds: [embed], components: [row] });
+
+        await interaction.reply({
+          content: "Activation request submitted. This room will be deleted.",
+          ephemeral: true
+        });
+
+        activeApplications.delete(interaction.user.id);
+
+        setTimeout(() => {
+          interaction.channel.delete().catch(() => {});
+        }, 3000);
+      }
+
+      if (interaction.customId.startsWith("deny_modal_")) {
+        const userId = interaction.customId.replace("deny_modal_", "");
+        const reason = interaction.fields.getTextInputValue("deny_reason");
+
+        const user = await client.users.fetch(userId).catch(() => null);
+
+        if (user) {
+          await user.send({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle("Staff Activation Denied")
+                .setDescription(`Reason: ${reason}`)
+                .setColor("Red")
+            ]
+          }).catch(() => {});
+        }
+
+        activeApplications.delete(userId);
+
+        await interaction.reply({
+          content: "Activation denied. This room will be deleted.",
+          ephemeral: true
+        });
+
+        setTimeout(() => {
+          interaction.channel.delete().catch(() => {});
+        }, 3000);
+      }
+    }
+  } catch (err) {
+    console.log(err);
+    if (!interaction.replied && !interaction.deferred) {
+      interaction.reply({
+        content: "Something went wrong.",
+        ephemeral: true
+      }).catch(() => {});
+    }
+  }
+});
+
+client.login(TOKEN);
