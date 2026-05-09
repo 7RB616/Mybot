@@ -123,6 +123,7 @@ function isHighStaff(member) {
 
 function getTeamRole(rankName) {
   const supportRanks = ["Support", "Senior Support", "Novice Support"];
+
   const adminRanks = [
     "Executive Administrator",
     "Supervisor Administrator",
@@ -152,6 +153,7 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === "setup-activation") {
         const channel = interaction.guild.channels.cache.get(CHANNELS.activation);
+
         if (!channel) {
           return interaction.reply({
             content: "Activation channel not found.",
@@ -185,6 +187,7 @@ client.on("interactionCreate", async (interaction) => {
         const evidence = interaction.options.getString("evidence") || "No evidence provided.";
 
         const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+
         if (!member) {
           return interaction.reply({
             content: "Member not found.",
@@ -207,13 +210,14 @@ client.on("interactionCreate", async (interaction) => {
           .addFields(
             { name: "User", value: `<@${user.id}>`, inline: true },
             { name: "By", value: `<@${interaction.user.id}>`, inline: true },
-            { name: "Reason", value: reason }
+            { name: "Reason", value: reason },
+            { name: "Evidence", value: "Hidden - click Show Evidence" }
           )
           .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
-            .setCustomId(`show_evidence_${user.id}_${interaction.user.id}`)
+            .setCustomId(`show_evidence_${user.id}_${Buffer.from(evidence).toString("base64")}`)
             .setLabel("Show Evidence")
             .setStyle(ButtonStyle.Secondary),
 
@@ -223,12 +227,10 @@ client.on("interactionCreate", async (interaction) => {
             .setStyle(ButtonStyle.Danger)
         );
 
-        const msg = await warnLog.send({
+        await warnLog.send({
           embeds: [embed],
           components: [row]
         });
-
-        msg.evidence = evidence;
 
         await user.send({
           embeds: [
@@ -294,7 +296,7 @@ client.on("interactionCreate", async (interaction) => {
 
         const select = new StringSelectMenuBuilder()
           .setCustomId("select_activation_rank")
-          .setPlaceholder("Select your rank")
+          .setPlaceholder("اختر رتبتك")
           .addOptions(
             Object.keys(STAFF_ROLES).map(name => ({
               label: name,
@@ -350,9 +352,20 @@ client.on("interactionCreate", async (interaction) => {
 
         activeApplications.delete(userId);
 
-        await interaction.reply({
-          content: "Activation accepted. This room will be deleted.",
-          ephemeral: true
+        const oldEmbed = interaction.message.embeds[0];
+        const newEmbed = EmbedBuilder.from(oldEmbed)
+          .setColor("Green")
+          .setTitle("Activation Request Accepted")
+          .addFields(
+            { name: "Status", value: "Accepted", inline: true },
+            { name: "Accepted By", value: `<@${interaction.user.id}>`, inline: true },
+            { name: "Applicant", value: `<@${userId}>`, inline: true }
+          );
+
+        await interaction.update({
+          content: `Accepted by <@${interaction.user.id}> | Applicant: <@${userId}>`,
+          embeds: [newEmbed],
+          components: []
         });
 
         setTimeout(() => {
@@ -371,7 +384,7 @@ client.on("interactionCreate", async (interaction) => {
         const userId = interaction.customId.split("_")[2];
 
         const modal = new ModalBuilder()
-          .setCustomId(`deny_modal_${userId}`)
+          .setCustomId(`deny_modal_${userId}_${interaction.message.id}`)
           .setTitle("Deny Activation");
 
         const reason = new TextInputBuilder()
@@ -388,6 +401,7 @@ client.on("interactionCreate", async (interaction) => {
       if (interaction.customId.startsWith("show_evidence_")) {
         const parts = interaction.customId.split("_");
         const warnedUserId = parts[2];
+        const evidenceBase64 = parts.slice(3).join("_");
 
         const allowed =
           interaction.user.id === warnedUserId ||
@@ -400,8 +414,13 @@ client.on("interactionCreate", async (interaction) => {
           });
         }
 
+        let evidence = "No evidence provided.";
+        try {
+          evidence = Buffer.from(evidenceBase64, "base64").toString("utf8");
+        } catch {}
+
         return interaction.reply({
-          content: "Evidence is attached in the warning record. If it was a link, check the staff log message.",
+          content: `Evidence:\n${evidence}`,
           ephemeral: true
         });
       }
@@ -443,29 +462,29 @@ client.on("interactionCreate", async (interaction) => {
 
         const modal = new ModalBuilder()
           .setCustomId(`activation_modal_${selectedRank}`)
-          .setTitle("Activation Form");
+          .setTitle("نموذج التفعيل");
 
         const accountName = new TextInputBuilder()
           .setCustomId("account_name")
-          .setLabel("Account Name")
+          .setLabel("اسم الحساب داخل اللعبة")
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
         const gameId = new TextInputBuilder()
           .setCustomId("game_id")
-          .setLabel("In-game ID")
+          .setLabel("الايدي داخل اللعبة")
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
         const hours = new TextInputBuilder()
           .setCustomId("hours")
-          .setLabel("Hours + Proof")
+          .setLabel("الساعات + الدليل")
           .setStyle(TextInputStyle.Paragraph)
           .setRequired(true);
 
         const acceptedBy = new TextInputBuilder()
           .setCustomId("accepted_by")
-          .setLabel("Accepted By")
+          .setLabel("من قام بقبولك؟")
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
@@ -499,10 +518,10 @@ client.on("interactionCreate", async (interaction) => {
           .addFields(
             { name: "User", value: `<@${interaction.user.id}>`, inline: true },
             { name: "Rank", value: rankName, inline: true },
-            { name: "Account Name", value: accountName },
-            { name: "In-game ID", value: gameId },
-            { name: "Hours + Proof", value: hours },
-            { name: "Accepted By", value: acceptedBy }
+            { name: "اسم الحساب داخل اللعبة", value: accountName },
+            { name: "الايدي داخل اللعبة", value: gameId },
+            { name: "الساعات + الدليل", value: hours },
+            { name: "من قام بقبولك؟", value: acceptedBy }
           )
           .setTimestamp();
 
@@ -518,7 +537,11 @@ client.on("interactionCreate", async (interaction) => {
             .setStyle(ButtonStyle.Danger)
         );
 
-        await log.send({ embeds: [embed], components: [row] });
+        await log.send({
+          content: `New activation request from <@${interaction.user.id}>`,
+          embeds: [embed],
+          components: [row]
+        });
 
         await interaction.reply({
           content: "Activation request submitted. This room will be deleted.",
@@ -533,7 +556,9 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       if (interaction.customId.startsWith("deny_modal_")) {
-        const userId = interaction.customId.replace("deny_modal_", "");
+        const parts = interaction.customId.split("_");
+        const userId = parts[2];
+        const messageId = parts[3];
         const reason = interaction.fields.getTextInputValue("deny_reason");
 
         const user = await client.users.fetch(userId).catch(() => null);
@@ -551,6 +576,29 @@ client.on("interactionCreate", async (interaction) => {
 
         activeApplications.delete(userId);
 
+        const logChannel = interaction.guild.channels.cache.get(CHANNELS.activationLog);
+        const logMessage = await logChannel.messages.fetch(messageId).catch(() => null);
+
+        if (logMessage) {
+          const oldEmbed = logMessage.embeds[0];
+
+          const newEmbed = EmbedBuilder.from(oldEmbed)
+            .setColor("Red")
+            .setTitle("Activation Request Denied")
+            .addFields(
+              { name: "Status", value: "Denied", inline: true },
+              { name: "Denied By", value: `<@${interaction.user.id}>`, inline: true },
+              { name: "Applicant", value: `<@${userId}>`, inline: true },
+              { name: "Deny Reason", value: reason }
+            );
+
+          await logMessage.edit({
+            content: `Denied by <@${interaction.user.id}> | Applicant: <@${userId}>`,
+            embeds: [newEmbed],
+            components: []
+          });
+        }
+
         await interaction.reply({
           content: "Activation denied. This room will be deleted.",
           ephemeral: true
@@ -563,6 +611,7 @@ client.on("interactionCreate", async (interaction) => {
     }
   } catch (err) {
     console.log(err);
+
     if (!interaction.replied && !interaction.deferred) {
       interaction.reply({
         content: "Something went wrong.",
