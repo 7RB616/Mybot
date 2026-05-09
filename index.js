@@ -25,7 +25,7 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const CHANNELS = {
   activation: "1502685193201389700",
-  activationLog: "1502675972820828292",
+  activationLog: "1502691255275098262",
   warnLog: "1502685588535640195"
 };
 
