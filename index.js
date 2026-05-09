@@ -163,7 +163,7 @@ client.on("interactionCreate", async (interaction) => {
 
         const embed = new EmbedBuilder()
           .setTitle("Staff Activation Panel")
-          .setDescription("Click the button below to start your activation request.")
+          .setDescription("يرجى وضع معلومات صحيحه اثناء التفعيل لضمان القبول")
           .setColor("Blue");
 
         const row = new ActionRowBuilder().addComponents(
