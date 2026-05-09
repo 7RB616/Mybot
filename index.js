@@ -603,10 +603,6 @@ client.on("interactionCreate", async (interaction) => {
           content: "Activation denied. This room will be deleted.",
           ephemeral: true
         });
-
-        setTimeout(() => {
-          interaction.channel.delete().catch(() => {});
-        }, 3000);
       }
     }
   } catch (err) {
