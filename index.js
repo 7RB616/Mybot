@@ -25,9 +25,8 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const CHANNELS = {
   activation: "1502685193201389700",
-  activationLog: "1502699859340431520",
+  activationLog: "1502675972820828292",
   warnLog: "1502685588535640195",
-
   supportRequest: "1502697610509549810",
   adminRequests: "1502697779410108639"
 };
@@ -50,15 +49,12 @@ const STAFF_ROLES = {
   "Head Management": "1493305291087937676",
   "Senior Management": "1493305338718584883",
   "Novice Management": "1493305383534596238",
-
   "- Admin Manager": "1493307310540324885",
   "- Support Manager": "1493307361467568190",
-
   "Executive Administrator": "1493305632768393226",
   "Supervisor Administrator": "1493305853183262740",
   "Senior Administrator": "1493305967993946244",
   "Novice Administrator": "1493306037200093296",
-
   "Support": "1493306309355901068",
   "Senior Support": "1493306398547902525",
   "Novice Support": "1493306470199070720"
@@ -209,9 +205,16 @@ client.on("interactionCreate", async (interaction) => {
       if (interaction.commandName === "setup-activation") {
         const channel = interaction.guild.channels.cache.get(CHANNELS.activation);
 
+        if (!channel) {
+          return interaction.reply({
+            content: "Activation channel not found.",
+            ephemeral: true
+          });
+        }
+
         const embed = new EmbedBuilder()
           .setTitle("Staff Activation Panel")
-          .setDescription("Click the button below to start your activation request.")
+          .setDescription("يرجى كتابة المعلومات بشكل صحيح لضمان قبول التفعيل")
           .setColor("Blue");
 
         const row = new ActionRowBuilder().addComponents(
@@ -235,17 +238,29 @@ client.on("interactionCreate", async (interaction) => {
         const evidence = interaction.options.getString("evidence") || "No evidence provided.";
 
         const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+
         if (!member) {
-          return interaction.reply({ content: "Member not found.", ephemeral: true });
+          return interaction.reply({
+            content: "Member not found.",
+            ephemeral: true
+          });
         }
 
         let warnLevel = 1;
+
         if (member.roles.cache.has(WARN_ROLES[2])) warnLevel = 3;
         else if (member.roles.cache.has(WARN_ROLES[1])) warnLevel = 2;
 
         await member.roles.add(WARN_ROLES[warnLevel]);
 
         const warnLog = interaction.guild.channels.cache.get(CHANNELS.warnLog);
+
+        if (!warnLog) {
+          return interaction.reply({
+            content: "Warn log channel not found.",
+            ephemeral: true
+          });
+        }
 
         const embed = new EmbedBuilder()
           .setTitle(`Staff Warning #${warnLevel}`)
@@ -284,6 +299,73 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     if (interaction.isButton()) {
+      if (interaction.customId === "open_activation") {
+        if (activeApplications.has(interaction.user.id)) {
+          return interaction.reply({
+            content: "You already have an active activation request.",
+            ephemeral: true
+          });
+        }
+
+        activeApplications.add(interaction.user.id);
+
+        const category = interaction.channel.parent;
+
+        const channel = await interaction.guild.channels.create({
+          name: `activation-${interaction.user.username}`,
+          type: ChannelType.GuildText,
+          parent: category?.id || null,
+          permissionOverwrites: [
+            {
+              id: interaction.guild.id,
+              deny: [PermissionFlagsBits.ViewChannel]
+            },
+            {
+              id: interaction.user.id,
+              allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory
+              ]
+            },
+            {
+              id: TEAM_ROLES.highStaff,
+              allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory
+              ]
+            }
+          ]
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle("Activation Request")
+          .setDescription("Choose your rank, then fill the form.")
+          .setColor("Blue");
+
+        const select = new StringSelectMenuBuilder()
+          .setCustomId("select_activation_rank")
+          .setPlaceholder("اختر رتبتك")
+          .addOptions(
+            Object.keys(STAFF_ROLES).map(name => ({
+              label: name,
+              value: name
+            }))
+          );
+
+        await channel.send({
+          content: `<@${interaction.user.id}>`,
+          embeds: [embed],
+          components: [new ActionRowBuilder().addComponents(select)]
+        });
+
+        return interaction.reply({
+          content: `Activation room created: ${channel}`,
+          ephemeral: true
+        });
+      }
+
       if (interaction.customId === "open_support_request") {
         if (!isSupport(interaction.member)) {
           return interaction.reply({
@@ -362,7 +444,6 @@ client.on("interactionCreate", async (interaction) => {
             .setCustomId(`solve_request_${messageId}`)
             .setLabel("تم الحل")
             .setStyle(ButtonStyle.Success),
-
           new ButtonBuilder()
             .setCustomId(`unsolve_request_${messageId}`)
             .setLabel("لم يتم الحل")
@@ -449,7 +530,10 @@ client.on("interactionCreate", async (interaction) => {
 
       if (interaction.customId.startsWith("accept_activation_")) {
         if (!isHighStaff(interaction.member)) {
-          return interaction.reply({ content: "You don't have permission.", ephemeral: true });
+          return interaction.reply({
+            content: "You don't have permission.",
+            ephemeral: true
+          });
         }
 
         const parts = interaction.customId.split("_");
@@ -458,15 +542,22 @@ client.on("interactionCreate", async (interaction) => {
         const teamRoleId = parts[4];
 
         const member = await interaction.guild.members.fetch(userId).catch(() => null);
+
         if (!member) {
-          return interaction.reply({ content: "Member not found.", ephemeral: true });
+          return interaction.reply({
+            content: "Member not found.",
+            ephemeral: true
+          });
         }
 
         const mainRole = interaction.guild.roles.cache.get(roleId);
         const teamRole = teamRoleId !== "none" ? interaction.guild.roles.cache.get(teamRoleId) : null;
 
         if (!mainRole) {
-          return interaction.reply({ content: "Main role not found.", ephemeral: true });
+          return interaction.reply({
+            content: "Main role not found.",
+            ephemeral: true
+          });
         }
 
         try {
@@ -508,9 +599,9 @@ client.on("interactionCreate", async (interaction) => {
             type: ChannelType.GuildText,
             parent: staffCategory.id
           });
-
         } catch (err) {
           console.log("ROLE OR CHANNEL ERROR:", err);
+
           return interaction.reply({
             content: "I can't complete this action. Check bot role position and permissions.",
             ephemeral: true
@@ -529,6 +620,7 @@ client.on("interactionCreate", async (interaction) => {
         activeApplications.delete(userId);
 
         const oldEmbed = interaction.message.embeds[0];
+
         const newEmbed = EmbedBuilder.from(oldEmbed)
           .setColor("Green")
           .setTitle("Activation Request Accepted")
@@ -547,7 +639,10 @@ client.on("interactionCreate", async (interaction) => {
 
       if (interaction.customId.startsWith("deny_activation_")) {
         if (!isHighStaff(interaction.member)) {
-          return interaction.reply({ content: "You don't have permission.", ephemeral: true });
+          return interaction.reply({
+            content: "You don't have permission.",
+            ephemeral: true
+          });
         }
 
         const userId = interaction.customId.split("_")[2];
@@ -580,8 +675,12 @@ client.on("interactionCreate", async (interaction) => {
         const warnLevel = parts[3];
 
         const member = await interaction.guild.members.fetch(userId).catch(() => null);
+
         if (!member) {
-          return interaction.reply({ content: "Member not found.", ephemeral: true });
+          return interaction.reply({
+            content: "Member not found.",
+            ephemeral: true
+          });
         }
 
         await member.roles.remove(WARN_ROLES[warnLevel]).catch(() => {});
@@ -645,6 +744,13 @@ client.on("interactionCreate", async (interaction) => {
         const evidenceLink = interaction.fields.getTextInputValue("evidence_link");
 
         const adminChannel = interaction.guild.channels.cache.get(CHANNELS.adminRequests);
+
+        if (!adminChannel) {
+          return interaction.reply({
+            content: "Admin requests channel not found.",
+            ephemeral: true
+          });
+        }
 
         const embed = new EmbedBuilder()
           .setTitle("New Support Request")
@@ -749,6 +855,13 @@ client.on("interactionCreate", async (interaction) => {
 
         const log = interaction.guild.channels.cache.get(CHANNELS.activationLog);
 
+        if (!log) {
+          return interaction.reply({
+            content: "Activation log channel not found.",
+            ephemeral: true
+          });
+        }
+
         const embed = new EmbedBuilder()
           .setTitle("New Activation Request")
           .setColor("Blue")
@@ -767,7 +880,6 @@ client.on("interactionCreate", async (interaction) => {
             .setCustomId(`accept_activation_${interaction.user.id}_${roleId}_${teamRoleId}`)
             .setLabel("Accept")
             .setStyle(ButtonStyle.Success),
-
           new ButtonBuilder()
             .setCustomId(`deny_activation_${interaction.user.id}`)
             .setLabel("Deny")
