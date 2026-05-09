@@ -17,11 +17,11 @@ const {
    CONFIG
 ========================= */
 
-const TOKEN = "PUT_YOUR_TOKEN_HERE";
+
 
 const PREFIX = "!";
 
-const AUTO_ROLE_ID = "PUT_ROLE_ID_HERE";
+const AUTO_ROLE_ID = "1502221688450977912";
 
 const MENTION_CHANNELS = [
   "CHANNEL_ID_1",
@@ -763,4 +763,4 @@ client.on(
   }
 );
 
-client.login(TOKEN);
+const TOKEN = process.env.TOKEN;
