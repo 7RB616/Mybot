@@ -474,5 +474,6 @@ client.on("interactionCreate", async (interaction) => {
     console.log(err);
   }
 });
+require('./commands.js');
 
 client.login(TOKEN);
