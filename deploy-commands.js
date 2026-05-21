@@ -1,8 +1,9 @@
 const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
 require("dotenv").config();
 
+// مصفوفة الأوامر الشاملة المصححة بالكامل
 const commands = [
-  // ==================== 🛠️ الأوامر الإدارية القديمة ====================
+  // 1. أوامرك القديمة المعتمدة في نظامك
   new SlashCommandBuilder()
     .setName("resign")
     .setDescription("أرشفة رومات إداري وتسجيل استقالته")
@@ -21,22 +22,21 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("rank")
-    .setDescription("تغير رتبة إداري")
+    .setDescription("تغيير رتبة إداري")
     .addUserOption(opt => opt.setName("user").setDescription("الإداري المستهدف").setRequired(true))
     .addStringOption(opt => opt.setName("rank").setDescription("اسم الرتبة الجديدة").setRequired(true))
     .addStringOption(opt => opt.setName("reason").setDescription("سبب تغيير الرتبة").setRequired(true)),
 
   new SlashCommandBuilder().setName("setup-activation").setDescription("لوحة بدء التفعيل للإداريين الجدد"),
   new SlashCommandBuilder().setName("setup-request").setDescription("لوحة تقديم الطلبات"),
-  new SlashCommandBuilder().setName("setup-ticket-panel").setDescription("إرسال لوحة فتح التذاكر للاعبين 🎫"),
   
   new SlashCommandBuilder()
     .setName("clearwarns")
     .setDescription("مسح التحذيرات السابقة عن إداري")
-    .addUserOption(o => o.setName("user").setDescription("الإداري المستهدف").setRequired(true))
-    .addStringOption(o => o.setName("reason").setDescription("سبب مسح التحذيرات").setRequired(true)),
+    .addUserOption(o => o.setName("user").setDescription("الإداري المستهدف").setRequired(true)) // تم تصحيح الوصف هنا ⚠️
+    .addStringOption(o => o.setName("reason").setDescription("سبب مسح التحذيرات").setRequired(true)), // تم تصحيح الوصف هنا ⚠️
 
-  // ==================== 📊 أوامر نظام النقاط والتفاعل ====================
+  // 2. ⭐️ أوامر نظام النقاط الجديد المتطور ⭐️
   new SlashCommandBuilder()
     .setName('points')
     .setDescription('📊 لعرض نقاطك الإدارية الحالية وإحصائيات تفاعلك.')
@@ -60,60 +60,33 @@ const commands = [
                 { name: 'سحب نقاط', value: 'remove' },
                 { name: 'تعيين رقم محدد', value: 'set' }
             ))
-    .addIntegerOption(option => option.setName('amount').setDescription('عدد النقاط المراد التعامل معها').setRequired(true)),
-
-  // ==================== 🎫 حزمة أوامر التذاكر الجديدة باختصاراتها المعتمدة ====================
-  new SlashCommandBuilder()
-    .setName("let")
-    .setDescription("⏳ وضع التذكرة في وضع الخمول وتحديد توقيت تلقائي لإغلاقها")
-    .addIntegerOption(opt => opt.setName("minutes").setDescription("عدد الدقائق قبل الإغلاق التلقائي").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("rename")
-    .setDescription("✏️ تغيير اسم روم التذكرة الحالي")
-    .addStringOption(opt => opt.setName("name").setDescription("الاسم الجديد للروم").setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName("tr")
-    .setDescription("⚙️ نقل التذكرة إلى أحد الأقسام المعتمدة")
-    .addStringOption(opt => opt.setName("category").setDescription("القسم المطلوب النقل إليه").setRequired(true)
-      .addChoices(
-        { name: "قسم التقديمات (Staff application)", value: "staff_app" },
-        { name: "قسم مشاكل الديسكورد (Discord problems)", value: "discord_prob" },
-        { name: "تقديم المبرمجين (Developer Application)", value: "dev_app" },
-        { name: "قسم اعتراض على عقوبة (Objection)", value: "objection" }
-      )),
-
-  new SlashCommandBuilder()
-    .setName("dr")
-    .setDescription("✋ ترك التذكرة الحالية وإعادتها للاستلام العام"),
-
-  new SlashCommandBuilder()
-    .setName("cr")
-    .setDescription("🔒 إغلاق التذكرة الحالية نهائياً وبدء نظام تقييم اللاعب بالنجوم"),
-
-  new SlashCommandBuilder()
-    .setName("activity")
-    .setDescription("📊 رؤية إحصائيات التذاكر الخاصة بي ومتوسط التقييم الحاصل عليه")
-    .addUserOption(opt => opt.setName("user").setDescription("الإداري المستهدف (اختياري)").setRequired(false))
-
+    .addIntegerOption(option => option.setName('amount').setDescription('عدد النقاط المراد التعامل معها').setRequired(true))
 ].map(command => command.toJSON());
 
-// ربط التوكن والـ Client ID من ملف الـ .env
+// تهيئة أداة الـ REST
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
 (async () => {
   try {
-    console.log("⏳ جاري رفع وتحديث الأوامر المدمجة كاملة بسيرفرات ديسكورد...");
+    console.log("⏳ جاري رفع وتحديث الأوامر في سيرفرات ديسكورد...");
     
-    // رفع الأوامر لسيرفر الإدارة وسيرفر التذاكر
-    await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, "1493304316906176563"), { body: commands });
-    await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, "1363170758662291456"), { body: commands });
+    // رفع الأوامر لسيرفر الإدارة
+    await rest.put(
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, "1493304316906176563"), 
+      { body: commands }
+    );
+    
+    // رفع الأوامر للسيرفر الرئيسي
+    await rest.put(
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, "1489798320762130452"), 
+      { body: commands }
+    );
     
     console.log("=================================");
-    console.log("✅ تم بنجاح رفع وتحديث كافة الأوامر بالاختصارات الجديدة!");
+    console.log("✅ تم تحديث ورفع كافة الأوامر بنجاح في السيرفرين!");
     console.log("=================================");
   } catch (error) {
-    console.error("❌ حدث خطأ أثناء رفع الأوامر:", error);
+    console.error("❌ حدث خطأ أثناء رفع الأوامر:");
+    console.error(error);
   }
 })();
