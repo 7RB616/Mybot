@@ -61,15 +61,19 @@ const STAFF_ROLES = {
   "Novice Support": "1493306470199070720"
 };
 
+// رتبة المسؤول الإداري الأعلى المسموح له بإلغاء الوارنات
+const MANAGER_ROLE_ID = "1493307428828090468";
+
 const activeApplications = new Set();
 const requestData = new Map();
+const warnEvidences = new Map(); // كاش مؤقت لحفظ أدلة التحذيرات بالذاكرة
 
 // ⭐️ إعدادات نظام النقاط المطور الحقيقية بناءً على خوادمك ⭐️
 const POINTS_CONFIG = {
-  MAIN_GUILD_ID: "1489798320762130452",         // السيرفر الرئيسي للتفاعل
-  ADMIN_GUILD_ID: "1493304316906176563",        // سيرفر الإدارة لفحص الرتب
-  MAIN_CHAT_ID: "1491127422278566067",          // الشات العام المستهدف بالحساب
-  LOG_CHANNEL_ID: "1507083912453820497",        // شات اللوق الخاص بالنقاط
+  MAIN_GUILD_ID: "1489798320762130452",          // السيرفر الرئيسي للتفاعل
+  ADMIN_GUILD_ID: "1493304316906176563",         // سيرفر الإدارة لفحص الرتب
+  MAIN_CHAT_ID: "1491127422278566067",           // الشات العام المستهدف بالحساب
+  LOG_CHANNEL_ID: "1507083912453820497",         // شات اللوق الخاص بالنقاط
   
   // الرتب الإدارية المستهدفة التي أرسلتها سابقاً في TEAM_ROLES
   STAFF_ROLES: [
@@ -81,7 +85,7 @@ const POINTS_CONFIG = {
   // نظام الفلاتر والحساب
   POINTS: {
     MESSAGE_POINTS: 2,      // نقطتين لكل رسالة
-    COOLDOWN: 5000,         // منع السبام: 5 ثوانٍ بين الرسائل
+    COOLDOWN: 5000,          // منع السبام: 5 ثوانٍ بين الرسائل
     MIN_LENGTH: 4,          // الحد الأدنى للحروف (الرسائل القصيرة جداً لن تحسب)
     
     VOICE_INTERVAL: 600000, // كل 10 دقائق في الفويس
@@ -203,16 +207,16 @@ client.on("messageCreate", async (message) => {
       await message.delete().catch(() => {});
       const msg = await message.channel.send(`⚠️ <@${message.author.id}> يرجى الالتزام بالنموذج:\n\nتقرير رقم :\nتاريخ اليوم :\nشرح التقرير :`);
       setTimeout(() => msg.delete().catch(() => {}), 5000);
-      return; // يخرج عشان ما يعطيه نقاط على رسالة خاطئة ومحذوفة
+      return; 
     }
   }
 
-  // 2. ⭐️ نظام احتساب نقاط تفاعل الشات الجديد ⭐️
+  // 2. نظام احتساب نقاط تفاعل الشات الجديد
   if (message.guildId === POINTS_CONFIG.MAIN_GUILD_ID && message.channelId === POINTS_CONFIG.MAIN_CHAT_ID) {
-    if (message.content.length < POINTS_CONFIG.POINTS.MIN_LENGTH) return; // فلتر الرسائل القصيرة
+    if (message.content.length < POINTS_CONFIG.POINTS.MIN_LENGTH) return; 
 
     const userId = message.author.id;
-    if (!(await isStaffMember(userId))) return; // التأكد أنه إداري معتمد
+    if (!(await isStaffMember(userId))) return; 
 
     let data = await db.get('SELECT * FROM staff_points WHERE user_id = ?', userId);
     if (!data) {
@@ -221,7 +225,7 @@ client.on("messageCreate", async (message) => {
     }
 
     const now = Date.now();
-    if (now - data.last_msg_time < POINTS_CONFIG.POINTS.COOLDOWN) return; // فلتر الكول داون والسبام
+    if (now - data.last_msg_time < POINTS_CONFIG.POINTS.COOLDOWN) return; 
 
     await db.run(
       'UPDATE staff_points SET points = points + ?, msg_count = msg_count + 1, last_msg_time = ? WHERE user_id = ?',
@@ -230,34 +234,32 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// ⭐️ 3. نظام احتساب تفاعل الفويس المطور ومنع الـ AFK والميوت ⭐️
+// ⭐️ 3. نظام احتساب تفاعل الفويس المطور المحدث (يسمح بالميوت والديفن) ⭐️
 client.on('voiceStateUpdate', async (oldState, newState) => {
   if (oldState.guild.id !== POINTS_CONFIG.MAIN_GUILD_ID) return;
   const userId = newState.id;
   if (!(await isStaffMember(userId))) return;
 
-  // حالة دخول روم صوتي
   if (!oldState.channelId && newState.channelId) {
-    if (newState.channelId === newState.guild.afkChannelId || newState.deaf || newState.mute) return;
+    if (newState.channelId === newState.guild.afkChannelId) return;
     voiceLog.set(userId, Date.now());
   }
 
-  // حالة تعديل الميوت / الديفن أو دخول غرفة الـ AFK يعامل كخروج ويتوقف الحساب فوراً للعدل
   if (oldState.channelId && newState.channelId) {
-    if (newState.deaf || newState.mute || newState.channelId === newState.guild.afkChannelId) {
+    if (newState.channelId === newState.guild.afkChannelId) {
       await handleVoicePointsRecord(userId);
-    } else if (!oldState.deaf && !newState.deaf && !oldState.mute && !newState.mute) {
-      if (!voiceLog.has(userId)) voiceLog.set(userId, Date.now());
+    } else {
+      if (!voiceLog.has(userId)) {
+        voiceLog.set(userId, Date.now());
+      }
     }
   }
 
-  // حالة الخروج النهائي من الرومات الصوتي
   if (oldState.channelId && !newState.channelId) {
     await handleVoicePointsRecord(userId);
   }
 });
 
-// دالة داخلية تابعة للفويس لمعالجة الدقائق والنقاط بالقاعدة تلقائياً
 async function handleVoicePointsRecord(userId) {
   const startTime = voiceLog.get(userId);
   if (!startTime) return;
@@ -292,13 +294,13 @@ function isAdmin(member) {
   return member.permissions.has(PermissionFlagsBits.Administrator);
 }
 
-// كود التعامل مع التفاعلات (مدمج بالكامل مع أنظمتك السابقة وبدون أي تعديل ضار)
+// ================= كود التعامل مع التفاعلات والأوامر بعد دمج التعديلات الجديدة =================
 client.on("interactionCreate", async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
 
-      // أمر الاستقالة المطور حقك
+      // امر الاستقالة المطور
       if (commandName === "resign") {
         const user = options.getUser("user");
         const reason = options.getString("reason");
@@ -331,7 +333,7 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "تمت الأرشفة بنجاح.", ephemeral: true });
       }
 
-      // أمر الرتب القديم حقك
+      // أمر الرتب
       if (commandName === "rank") {
         const user = options.getUser("user");
         const rankName = options.getString("rank");
@@ -342,19 +344,51 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: `✅ تم تغيير رتبة <@${user.id}> إلى ${rankName}`, ephemeral: true });
       }
 
-      // أمر التحذير القديم حقك
+      // ⚠️ أمر التحذير المطور بالكامل (المستبدل بناءً على طلبك)
       if (commandName === "warn") {
         const user = options.getUser("user");
         const num = options.getInteger("number");
         const reason = options.getString("reason");
-        const member = await interaction.guild.members.fetch(user.id);
-        await member.roles.add(WARN_ROLES[num]);
-        const warnEmbed = new EmbedBuilder().setTitle("تحذير جديد").addFields({name:"المستلم", value:`<@${user.id}>`}, {name:"السبب", value:reason});
-        await interaction.guild.channels.cache.get(CHANNELS.warnLog).send({ embeds: [warnEmbed] });
-        return interaction.reply({ content: "تم إعطاء التحذير.", ephemeral: true });
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+
+        if (!member) return interaction.reply({ content: "❌ لم يتم العثور على هذا العضو في السيرفر.", ephemeral: true });
+
+        if (WARN_ROLES[num]) {
+          await member.roles.add(WARN_ROLES[num]).catch(() => {});
+        }
+
+        const warnEmbed = new EmbedBuilder()
+          .setTitle("⚠️ تحذير إداري جديد")
+          .setDescription(`تم إصدار عقوبة تحذيرية بحق العضو المذكور أدناه لعدم الالتزام بالقوانين.`)
+          .setColor(0xe74c3c)
+          .addFields(
+            { name: "👤 المستلم:", value: `<@${user.id}> (\`${user.id}\`)`, inline: true },
+            { name: "🛡️ المسؤول الإداري:", value: `<@${interaction.user.id}>`, inline: true },
+            { name: "🔢 رقم التحذير:", value: `\`التحذير رقم ${num}\``, inline: true },
+            { name: "📝 السبب:", value: `\`\`\`${reason}\`\`\`` }
+          )
+          .setTimestamp();
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`show_evidence_${interaction.user.id}_${user.id}`)
+            .setLabel("🔍 إظهار / إضافة الدليل")
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`cancel_warn_${interaction.user.id}_${user.id}_${num}`)
+            .setLabel("❌ إلغاء التحذير")
+            .setStyle(ButtonStyle.Danger)
+        );
+
+        const warnLogChannel = interaction.guild.channels.cache.get(CHANNELS.warnLog);
+        if (warnLogChannel) {
+          await warnLogChannel.send({ embeds: [warnEmbed], components: [row] });
+        }
+
+        return interaction.reply({ content: `✅ تم إصدار التحذير بنجاح وإرساله إلى روم اللوق.`, ephemeral: true });
       }
 
-      // أمر لوحة التفعيل حقك
+      // أمر لوحة التفعيل
       if (commandName === "setup-activation") {
         const embed = new EmbedBuilder().setTitle("Activation System").setDescription("اضغط على الزر أدناه لبدء التفعيل");
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("start_activation").setLabel("بدء التفعيل").setStyle(ButtonStyle.Primary));
@@ -362,7 +396,7 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "تم الإرسال.", ephemeral: true });
       }
 
-      // ⭐️ [إضافة] أوامر نظام النقاط الجديد المتطور في الـ interactionCreate ⭐️
+      // أمر النقاط الخاص بالإداري
       if (commandName === 'points') {
         const target = options.getUser('user') || interaction.user;
         if (!(await isStaffMember(target.id))) {
@@ -390,6 +424,7 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ embeds: [embed] });
       }
 
+      // أمر متصدري التفاعل
       if (commandName === 'top-staff') {
         const list = await db.all('SELECT * FROM staff_points ORDER BY points DESC LIMIT 10');
         if (list.length === 0) return interaction.reply({ content: '📭 لا توجد بيانات تفاعل مسجلة للإداريين حتى الآن.', ephemeral: true });
@@ -405,6 +440,7 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ embeds: [embed] });
       }
 
+      // أمر التحكم بالنقاط للإدارة العليا
       if (commandName === 'manage-points') {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: '❌ هذا الأمر مخصص للإدارة العليا فقط.', ephemeral: true });
@@ -435,17 +471,20 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
+    // --- معالجة الضغط على الأزرار ---
     if (interaction.isButton()) {
-      if (interaction.customId === "start_activation") {
+      const customId = interaction.customId;
+
+      if (customId === "start_activation") {
         const modal = new ModalBuilder().setCustomId("activation_modal").setTitle("Activation Form");
         const nameInput = new TextInputBuilder().setCustomId("real_name").setLabel("الاسم الحقيقي").setStyle(TextInputStyle.Short);
         modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
         await interaction.showModal(modal);
+        return;
       }
 
-      // زر القبول المطور حقك
-      if (interaction.customId.startsWith("accept_activation_")) {
-        const [, , userId, roleId] = interaction.customId.split("_");
+      if (customId.startsWith("accept_activation_")) {
+        const [, , userId, roleId] = customId.split("_");
         const member = await interaction.guild.members.fetch(userId);
 
         const category = await interaction.guild.channels.create({
@@ -466,14 +505,88 @@ client.on("interactionCreate", async (interaction) => {
         await member.roles.add(roleId);
         return interaction.update({ content: "✅ تم التفعيل بنجاح.", components: [], embeds: [] });
       }
+
+      // ❌ زر إلغاء التحذير المطور والمشطوب بالكامل
+      if (customId.startsWith("cancel_warn_")) {
+        const [, , adminId, targetId, warnNum] = customId.split("_");
+
+        if (!interaction.member.roles.cache.has(MANAGER_ROLE_ID)) {
+          return interaction.reply({ content: "❌ هذا الزر مخصص للإدارة العليا فقط الموكل لها إلغاء العقوبات.", ephemeral: true });
+        }
+
+        const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+        if (targetMember && WARN_ROLES[warnNum]) {
+          await targetMember.roles.remove(WARN_ROLES[warnNum]).catch(() => {});
+        }
+
+        const oldEmbed = interaction.message.embeds[0];
+        if (!oldEmbed) return interaction.reply({ content: "❌ تعذر العثور على بيانات التحذير الأصلية.", ephemeral: true });
+
+        const cancelledEmbed = new EmbedBuilder()
+          .setTitle(`~~${oldEmbed.title} (ملغي)~~`)
+          .setDescription(`~~${oldEmbed.description || ""}~~`)
+          .setColor(0x7f8c8d)
+          .setTimestamp();
+
+        if (oldEmbed.fields) {
+          oldEmbed.fields.forEach(f => {
+            cancelledEmbed.addFields({ name: `~~${f.name}~~`, value: `~~${f.value}~~`, inline: f.inline });
+          });
+        }
+
+        await interaction.update({ embeds: [cancelledEmbed], components: [] });
+        return;
+      }
+
+      // 🔍 زر الدليل التفاعلي المخصص فقط للمسؤول والمستلم والمسؤول الأعلى
+      if (customId.startsWith("show_evidence_")) {
+        const [, , adminId, targetId] = customId.split("_");
+
+        if (!warnEvidences.has(interaction.message.id)) {
+          if (interaction.user.id !== adminId && !interaction.member.roles.cache.has(MANAGER_ROLE_ID)) {
+            return interaction.reply({ content: "❌ لا يوجد دليل مرفوع بعد، وفقط المسؤول عن التحذير يمكنه إضافته الآن.", ephemeral: true });
+          }
+
+          const modal = new ModalBuilder()
+            .setCustomId(`evidence_modal_${interaction.message.id}_${adminId}_${targetId}`)
+            .setTitle("📝 إضافة دليل التحذير");
+
+          const evidenceInput = new TextInputBuilder()
+            .setCustomId("evidence_text")
+            .setLabel("رابط الدليل أو تفاصيل الإثبات:")
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder("ضع هنا روابط الصور، الفيديوهات أو تفاصيل المخالفة...")
+            .setRequired(true);
+
+          modal.addComponents(new ActionRowBuilder().addComponents(evidenceInput));
+          await interaction.showModal(modal);
+          return;
+        }
+
+        if (interaction.user.id !== adminId && interaction.user.id !== targetId && !interaction.member.roles.cache.has(MANAGER_ROLE_ID)) {
+          return interaction.reply({ content: "🔒 عذراً، لا يُسمح برؤية الدليل إلا للمسؤول عن العقوبة أو العضو المحذّر نفسه.", ephemeral: true });
+        }
+
+        const savedEvidence = warnEvidences.get(interaction.message.id);
+        return interaction.reply({ content: `ℹ️ **دليل التحذير المرفق:**\n${savedEvidence}`, ephemeral: true });
+      }
     }
 
-    // هنا تضع بقية التعامل مع الـ ModalSubmit والـ StringSelectMenu من كودك القديم...
-    
+    // --- معالجة النوافذ المنبثقة Modals ---
+    if (interaction.isModalSubmit()) {
+      if (interaction.customId.startsWith("evidence_modal_")) {
+        const [, , messageId, adminId, targetId] = interaction.customId.split("_");
+        const evidenceText = interaction.fields.getTextInputValue("evidence_text");
+
+        warnEvidences.set(messageId, evidenceText);
+        return interaction.reply({ content: "✅ تم حفظ الدليل وإرفاقه بالتحذير بنجاح!", ephemeral: true });
+      }
+    }
+
   } catch (err) {
     console.log(err);
   }
 });
-require('./deploy-commands.js');
 
+require('./deploy-commands.js');
 client.login(TOKEN);
