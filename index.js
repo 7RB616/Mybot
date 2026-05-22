@@ -75,7 +75,6 @@ const POINTS_CONFIG = {
   MAIN_CHAT_ID: "1491127422278566067",
   LOG_CHANNEL_ID: "1507083912453820497",
   
-  
   STAFF_ROLES: [
     "1493305553429205183",
     "1493306105240092782",
@@ -94,7 +93,6 @@ const POINTS_CONFIG = {
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 let db;
-let leaderboardMessageId = null; // لتتبع الرسالة الثابتة بالروم وتحديثها دورياً
 
 (async () => {
     db = await open({ filename: './admin_points.db', driver: sqlite3.Database });
@@ -140,19 +138,19 @@ async function sendPointsLog(title, description, color = 0x3498db) {
   logChannel.send({ embeds: [embed] });
 }
 
-// 👑 دالة توليد وتحديث اللوحة الحديثة جداً (تصميم فخم، مقروء وممتاز)
+// 👑 دالة توليد اللوحة الحديثة جداً عند استدعاء الأمر
 async function generateLeaderboardEmbed() {
   const rows = await db.all('SELECT user_id, points FROM staff_points WHERE points > 0 ORDER BY points DESC');
   
   const embed = new EmbedBuilder()
     .setTitle("🌟 لوحة تفاعل ونقاط طاقم الإدارة العام | Vortex")
-    .setColor(0xd4af37) // 🏆 لون ذهبي ملكي فاخر وثابت
+    .setColor(0xd4af37) 
     .setThumbnail(client.user.displayAvatarURL())
-    .setFooter({ text: "يتم تحديث هذه القائمة تلقائياً ودورياً بنظام فورتيكس الذكي" })
+    .setFooter({ text: "شبكة فورتيكس الإدارية" })
     .setTimestamp();
 
   if (rows.length === 0) {
-    embed.setDescription("❌ **لا توجد نقاط أو تفاعل مسجل لأي إداري حتى الآن .**");
+    embed.setDescription("❌ **لا توجد نقاط أو تفاعل مسجل لأي إداري حتى الآن بالخادم.**");
     return embed;
   }
 
@@ -160,7 +158,6 @@ async function generateLeaderboardEmbed() {
   rows.forEach((row, index) => {
     let positionIndicator = "";
     
-    // تمييز المراكز الثلاثة الأولى بأيقونات فخمة وباقي المراكز بأرقام منسقة
     if (index === 0) positionIndicator = "🥇 **المركز الأول**";
     else if (index === 1) positionIndicator = "🥈 **المركز الثاني**";
     else if (index === 2) positionIndicator = "🥉 **المركز الثالث**";
@@ -173,40 +170,8 @@ async function generateLeaderboardEmbed() {
   return embed;
 }
 
-// دالة التحديث التلقائي للرسالة الثابتة بروم الليدربورد
-async function updateLeaderboard() {
-  try {
-    const channel = await client.channels.fetch(POINTS_CONFIG.LEADERBOARD_CHANNEL_ID).catch(() => null);
-    if (!channel) return;
-
-    const leaderboardEmbed = await generateLeaderboardEmbed();
-
-    if (leaderboardMessageId) {
-      const existingMsg = await channel.messages.fetch(leaderboardMessageId).catch(() => null);
-      if (existingMsg) {
-        await existingMsg.edit({ embeds: [leaderboardEmbed] });
-        return;
-      }
-    }
-
-    const newMsg = await channel.send({ embeds: [leaderboardEmbed] });
-    leaderboardMessageId = newMsg.id;
-
-  } catch (error) {
-    console.error("حدث خطأ أثناء تحديث القائمة التلقائية:", error);
-  }
-}
-
 client.once("ready", async () => {
-  console.log(`🔥 ${client.user.tag} جاهز واللوحة الذهبية الحديثة تعمل الآن بشكل مستقر.`);
-  
-  // تشغيل أولي عند بدء التشغيل
-  await updateLeaderboard();
-  
-  // تحديث تلقائي دوري كل 10 دقائق منظم
-  setInterval(async () => {
-    await updateLeaderboard();
-  }, 600000);
+  console.log(`🔥 ${client.user.tag} جاهز تماماً. نظام الإعلانات والنقاط مستقر وشغال.`);
 });
 
 client.on("messageCreate", async (message) => {
@@ -309,9 +274,39 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
 
-      // 🏆 ربط أمر السلاش القديم/الجديد لعرض اللوحة الكاملة الحديثة جداً فوراً
+      // 📢 أمر نشر الإعلانات والرسائل الاحترافي الجديد
+      if (commandName === "say") {
+        // التحقق من أن المستخدم لديه رتبة المسؤولين أو صلاحية الإدارة الكاملة
+        const isManager = interaction.member.roles.cache.has(MANAGER_ROLE_ID);
+        const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
+        if (!isManager && !isAdmin) {
+          return interaction.reply({ content: "❌ عذراً، هذا الأمر مخصص لمسؤولي الإدارة العليا فقط.", ephemeral: true });
+        }
+
+        const targetChannel = options.getChannel("channel");
+        const textContent = options.getString("message");
+        const attachment = options.getAttachment("image");
+
+        // التأكد من أن المستخدم أدخل إما نص أو صورة على الأقل لعدم إرسال رسالة فارغة
+        if (!textContent && !attachment) {
+          return interaction.reply({ content: "❌ يجب كتابة نص أو إرفاق صورة/ملف لإرسال الإعلان بشكل سليم.", ephemeral: true });
+        }
+
+        // إعداد خيارات الإرسال
+        const sendOptions = {};
+        if (textContent) sendOptions.content = textContent.replace(/\\n/g, '\n'); // دعم السطور الجديدة إذا كتبت \n
+        if (attachment) sendOptions.files = [attachment];
+
+        // إرسال الرسالة إلى الروم المستهدف باسم البوت
+        await targetChannel.send(sendOptions);
+
+        // رد تأكيدي مخفي (مخفي فقط عن باقي الأعضاء حتى لا يخرب شكل الشات)
+        return interaction.reply({ content: `✅ تم إرسال إعلانك بنجاح داخل الروم المستهدف: ${targetChannel}`, ephemeral: true });
+      }
+
+      // 🏆 أمر السلاش للوحة الصدارة الذهبية المحدثة
       if (commandName === "top-staff") {
-        await interaction.deferReply(); // لضمان عدم حدوث مهلة أو تعليق أثناء جلب البيانات
+        await interaction.deferReply(); 
         const updatedEmbed = await generateLeaderboardEmbed();
         return await interaction.editReply({ embeds: [updatedEmbed] });
       }
@@ -393,7 +388,7 @@ client.on("interactionCreate", async (interaction) => {
         if (WARN_ROLES[num]) await member.roles.add(WARN_ROLES[num]).catch(() => {});
 
         const warnEmbed = new EmbedBuilder()
-          .setTitle("⚠️ تحذير إداري جديد")
+          .setTitle("⚠️ تحذير إداري ")
           .setColor(0xe74c3c)
           .addFields(
             { name: "👤 المستلم:", value: `<@${user.id}>`, inline: true },
@@ -413,8 +408,8 @@ client.on("interactionCreate", async (interaction) => {
 
       if (commandName === "setup-activation") {
         const panelEmbed = new EmbedBuilder()
-          .setTitle("🔵 Vortex Network | نظام التفعيل الإداري المطور")
-          .setDescription("مرحباً بك في لوحة التحكم الإدارية الموحدة.\n\n> **يجب تفعيل روماتك الإدارية لعدم مخالفة القوانين وتجنب العقوبات.**\n\n*الرجاء اختيار رتبتك الإدارية الحالية من القائمة أدناه أولاً لإنشاء نموذجك المؤقت:*")
+          .setTitle("🔵 Vortex Network | نظام التفعيل الرومات الإداريه ")
+          .setDescription(".\n\n> **يجب تفعيل روماتك الإدارية لعدم مخالفة القوانين وتجنب العقوبات.**\n\n*الرجاء اختيار رتبتك الإدارية الحالية من القائمة أدناه أولاً لإنشاء نموذجك المؤقت:*")
           .setColor(0x00d2d3)
           .setFooter({ text: "Vortex Network Automation System" });
 
@@ -431,7 +426,7 @@ client.on("interactionCreate", async (interaction) => {
 
         const row = new ActionRowBuilder().addComponents(menu);
         await interaction.channel.send({ embeds: [panelEmbed], components: [row] });
-        return interaction.reply({ content: "✅ تم إرسال لوحة التفعيل الحديثة بالخادم الحالي.", ephemeral: true });
+        return interaction.reply({ content: "✅ تم إرسال لوحة التفعيل الحديثة بالسيرفر الحالي.", ephemeral: true });
       }
 
       if (commandName === 'points') {
@@ -470,9 +465,6 @@ client.on("interactionCreate", async (interaction) => {
 
         await db.run('UPDATE staff_points SET points = ? WHERE user_id = ?', finalPoints, target.id);
         await interaction.reply({ content: `⚙️ تم تحديث نقاط ${target} بنجاح إلى \`${finalPoints}\`` });
-        
-        // تحديث لوحة الصدارة والأمر فوراً تلقائياً عند أي تعديل للمسؤولين
-        await updateLeaderboard();
         
         return sendPointsLog('🛠️ إجراء إداري علوي للملفات', `المسؤول: ${interaction.user}\nالمستهدف: ${target}\nالإجراء: \`${action}\` بمقدار \`${amount}\` نقاط`, 0xe67e22);
       }
@@ -639,7 +631,7 @@ client.on("interactionCreate", async (interaction) => {
         const rankName = userSelectedRole.get(userId) || "Novice Support";
 
         const logEmbed = new EmbedBuilder()
-          .setTitle("📥 طلب تفعيل إداري جديد قيد المراجعة")
+          .setTitle("📥 طلب تفعيل روم اداري قيد المراجعة")
           .setColor(0xe67e22)
           .addFields(
             { name: "👤 العضو المتقدم:", value: `<@${userId}> (\`${userId}\`)`, inline: true },
@@ -651,16 +643,16 @@ client.on("interactionCreate", async (interaction) => {
           .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`approve_activation_${userId}_${rankName}_${ingameName}_${ingameId}`).setLabel("✅ قبول وإنشاء الرومات").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`approve_activation_${userId}_${rankName}_${ingameName}_${ingameId}`).setLabel("✅ قبول التفعيل").setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`deny_activation_${userId}`).setLabel("❌ رفض التفعيل").setStyle(ButtonStyle.Danger)
         );
 
         const logChannel = interaction.guild.channels.cache.get(CHANNELS.activationLog);
         if (logChannel) {
-          await logChannel.send({ content: `🔔 منشن المتقدم للتفعيل: <@${userId}>`, embeds: [logEmbed], components: [row] });
+          await logChannel.send({ content: `🔔  المتقدم للتفعيل: <@${userId}>`, embeds: [logEmbed], components: [row] });
         }
 
-        await interaction.reply({ content: "✅ تم تسليم استمارتك إلى لوق الإدارة العليا بنجاح! سيتم تدمير هذا الروم المؤقت تلقائياً الآن...", ephemeral: true });
+        await interaction.reply({ content: "✅ تم تسليم استمارتك إلى لوق الإدارة العليا بنجاح! سيتم حذف هذا الروم المؤقت تلقائياً الآن...", ephemeral: true });
         
         activeActivationRooms.delete(userId);
 
