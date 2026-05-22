@@ -1,7 +1,7 @@
 const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
 require("dotenv").config();
 
-// مصفوفة الأوامر الشاملة المصححة بالكامل
+// مصفوفة الأوامر الشاملة المحدثة والمصححة بالكامل
 const commands = [
   // 1. أوامرك القديمة المعتمدة في نظامك
   new SlashCommandBuilder()
@@ -33,10 +33,10 @@ const commands = [
   new SlashCommandBuilder()
     .setName("clearwarns")
     .setDescription("مسح التحذيرات السابقة عن إداري")
-    .addUserOption(o => o.setName("user").setDescription("الإداري المستهدف").setRequired(true)) // تم تصحيح الوصف هنا ⚠️
-    .addStringOption(o => o.setName("reason").setDescription("سبب مسح التحذيرات").setRequired(true)), // تم تصحيح الوصف هنا ⚠️
+    .addUserOption(o => o.setName("user").setDescription("الإداري المستهدف").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("سبب مسح التحذيرات").setRequired(true)),
 
-  // 2. ⭐️ أوامر نظام النقاط الجديد المتطور ⭐️
+  // 2. أوامر نظام النقاط المتطور
   new SlashCommandBuilder()
     .setName('points')
     .setDescription('📊 لعرض نقاطك الإدارية الحالية وإحصائيات تفاعلك.')
@@ -60,7 +60,27 @@ const commands = [
                 { name: 'سحب نقاط', value: 'remove' },
                 { name: 'تعيين رقم محدد', value: 'set' }
             ))
-    .addIntegerOption(option => option.setName('amount').setDescription('عدد النقاط المراد التعامل معها').setRequired(true))
+    .addIntegerOption(option => option.setName('amount').setDescription('عدد النقاط المراد التعامل معها').setRequired(true)),
+
+  // 3. 📢 أمر الإعلانات والمنشورات الجديد 📢
+  new SlashCommandBuilder()
+    .setName('say')
+    .setDescription('إرسال إعلان أو رسالة رسمية عبر البوت إلى روم محدد')
+    .addChannelOption(option => 
+      option.setName('channel')
+        .setDescription('الروم المستهدف لإرسال الرسالة')
+        .setRequired(true)
+    )
+    .addStringOption(option => 
+      option.setName('message')
+        .setDescription('نص الإعلان (اختياري، اكتب \\n لسطر جديد)')
+        .setRequired(false)
+    )
+    .addAttachmentOption(option => 
+      option.setName('image')
+        .setDescription('إرفاق صورة أو لوقو مع الإعلان (اختياري)')
+        .setRequired(false)
+    )
 ].map(command => command.toJSON());
 
 // تهيئة أداة الـ REST
@@ -81,28 +101,9 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
       Routes.applicationGuildCommands(process.env.CLIENT_ID, "1489798320762130452"), 
       { body: commands }
     );
-
-    new SlashCommandBuilder()
-  .setName('say')
-  .setDescription('إرسال إعلان أو رسالة رسمية عبر البوت إلى روم محدد')
-  .addChannelOption(option => 
-    option.setName('channel')
-      .setDescription('الروم المستهدف لإرسال الرسالة')
-      .setRequired(true)
-  )
-  .addStringOption(option => 
-    option.setName('message')
-      .setDescription('نص الإعلان (اختياري، اكتب \\n لسطر جديد)')
-      .setRequired(false)
-  )
-  .addAttachmentOption(option => 
-    option.setName('image')
-      .setDescription('إرفاق صورة أو لوقو مع الإعلان (اختياري)')
-      .setRequired(false)
-  )
     
     console.log("=================================");
-    console.log("✅ تم تحديث ورفع كافة الأوامر بنجاح في السيرفرين!");
+    console.log("✅ تم تحديث ورفع كافة الأوامر (بما فيها أمر /say) بنجاح!");
     console.log("=================================");
   } catch (error) {
     console.error("❌ حدث خطأ أثناء رفع الأوامر:");
