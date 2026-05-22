@@ -81,6 +81,25 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
       Routes.applicationGuildCommands(process.env.CLIENT_ID, "1489798320762130452"), 
       { body: commands }
     );
+
+    new SlashCommandBuilder()
+  .setName('say')
+  .setDescription('إرسال إعلان أو رسالة رسمية عبر البوت إلى روم محدد')
+  .addChannelOption(option => 
+    option.setName('channel')
+      .setDescription('الروم المستهدف لإرسال الرسالة')
+      .setRequired(true)
+  )
+  .addStringOption(option => 
+    option.setName('message')
+      .setDescription('نص الإعلان (اختياري، اكتب \\n لسطر جديد)')
+      .setRequired(false)
+  )
+  .addAttachmentOption(option => 
+    option.setName('image')
+      .setDescription('إرفاق صورة أو لوقو مع الإعلان (اختياري)')
+      .setRequired(false)
+  )
     
     console.log("=================================");
     console.log("✅ تم تحديث ورفع كافة الأوامر بنجاح في السيرفرين!");
