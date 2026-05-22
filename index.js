@@ -74,7 +74,7 @@ const POINTS_CONFIG = {
   ADMIN_GUILD_ID: "1493304316906176563",
   MAIN_CHAT_ID: "1491127422278566067",
   LOG_CHANNEL_ID: "1507083912453820497",
-  LEADERBOARD_CHANNEL_ID: "1507083912453820497", // روم لوحة المتصدرين (يمكنك نسحه أو وضع روم مستقل)
+  LEADERBOARD_CHANNEL_ID: "1507083912453820497", // روم لوحة المتصدرين الثابتة
   
   STAFF_ROLES: [
     "1493305553429205183",
@@ -94,7 +94,7 @@ const POINTS_CONFIG = {
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 let db;
-let leaderboardMessageId = null; // لتتبع رسالة قائمة النقاط وتحديثها تلقائياً
+let leaderboardMessageId = null; // لتتبع الرسالة الثابتة بالروم وتحديثها دورياً
 
 (async () => {
     db = await open({ filename: './admin_points.db', driver: sqlite3.Database });
@@ -140,42 +140,46 @@ async function sendPointsLog(title, description, color = 0x3498db) {
   logChannel.send({ embeds: [embed] });
 }
 
-// 🏆 دالة تحديث قائمة نقاط الإدارة الكاملة تلقائياً (اللون الذهبي الملكي والمنظم جداً)
+// 👑 دالة توليد وتحديث اللوحة الحديثة جداً (تصميم فخم، مقروء وممتاز)
+async function generateLeaderboardEmbed() {
+  const rows = await db.all('SELECT user_id, points FROM staff_points WHERE points > 0 ORDER BY points DESC');
+  
+  const embed = new EmbedBuilder()
+    .setTitle("🌟 لوحة تفاعل ونقاط طاقم الإدارة العام | Vortex")
+    .setColor(0xd4af37) // 🏆 لون ذهبي ملكي فاخر وثابت
+    .setThumbnail(client.user.displayAvatarURL())
+    .setFooter({ text: "يتم تحديث هذه القائمة تلقائياً ودورياً بنظام فورتيكس الذكي" })
+    .setTimestamp();
+
+  if (rows.length === 0) {
+    embed.setDescription("❌ **لا توجد نقاط أو تفاعل مسجل لأي إداري حتى الآن بالخادم.**");
+    return embed;
+  }
+
+  let listContent = "";
+  rows.forEach((row, index) => {
+    let positionIndicator = "";
+    
+    // تمييز المراكز الثلاثة الأولى بأيقونات فخمة وباقي المراكز بأرقام منسقة
+    if (index === 0) positionIndicator = "🥇 **المركز الأول**";
+    else if (index === 1) positionIndicator = "🥈 **المركز الثاني**";
+    else if (index === 2) positionIndicator = "🥉 **المركز الثالث**";
+    else positionIndicator = `🎖️ **المركز #${index + 1}**`;
+
+    listContent += `${positionIndicator}\n👤 **الإداري:** <@${row.user_id}>\n💰 **مجموع النقاط:** \`${row.points}\` نقطة\n────────────────────\n`;
+  });
+
+  embed.setDescription(listContent);
+  return embed;
+}
+
+// دالة التحديث التلقائي للرسالة الثابتة بروم الليدربورد
 async function updateLeaderboard() {
   try {
     const channel = await client.channels.fetch(POINTS_CONFIG.LEADERBOARD_CHANNEL_ID).catch(() => null);
     if (!channel) return;
 
-    // جلب جميع طاقم الإدارة المسجلين والذين يملكون نقاط بالترتيب التنازلي
-    const rows = await db.all('SELECT user_id, points FROM staff_points WHERE points > 0 ORDER BY points DESC');
-    
-    const leaderboardEmbed = new EmbedBuilder()
-      .setTitle("👑 قائمة تفاعل ونقاط طاقم الإدارة العام")
-      .setDescription("يتم تحديث هذه اللوحة تلقائياً وبشكل دوري لعرض مستويات أداء كافة المسؤولين.\n\n" + "```\nالمركز │ الإداري المستهدف          │ مجموع النقاط\n───────┼───────────────────────────┼─────────────\n" + 
-        (rows.length === 0 ? "        لا توجد نقاط مسجلة حالياً لأي إداري.        " : 
-        rows.map((row, index) => {
-          const rank = String(index + 1).padEnd(5, ' ');
-          // محاكاة تنظيف وعرض النصوص بشكل منظم جداً داخل البايند الخشبي للمصفوفة
-          const pointsStr = String(row.points).padEnd(11, ' ');
-          return `${rank} │ <@${row.user_id}>`.padEnd(35, ' ') + ` │ ${pointsStr}`;
-        }).join('\n')) + "\n```")
-      .setColor(0xd4af37) // 🌟 لون ذهبي ملكي مميز وثابت للوحة التفاعل
-      .setFooter({ text: "آخر تحديث تلقائي للنظام" })
-      .setTimestamp();
-
-    // تنظيم طريقة عرض المنشن بداخل الحقول الحية لسهولة الوصول للشخص والمركز
-    if (rows.length > 0) {
-      let formattedDescription = "🏆 **لوحة تفاعل ومجموع نقاط الطاقم الإداري:**\n\n";
-      rows.forEach((row, index) => {
-        let medal = "🔹";
-        if (index === 0) medal = "🥇";
-        else if (index === 1) medal = "🥈";
-        else if (index === 2) medal = "🥉";
-        
-        formattedDescription += `${medal} **المركز #${index + 1}** │ <@${row.user_id}> ─── 💰 **${row.points}** نقطة\n`;
-      });
-      leaderboardEmbed.setDescription(formattedDescription);
-    }
+    const leaderboardEmbed = await generateLeaderboardEmbed();
 
     if (leaderboardMessageId) {
       const existingMsg = await channel.messages.fetch(leaderboardMessageId).catch(() => null);
@@ -185,22 +189,21 @@ async function updateLeaderboard() {
       }
     }
 
-    // إذا لم تكن الرسالة موجودة مسبقاً، نقوم بإنشاء واحدة جديدة وحفظ رقم الـ ID الخاص بها
     const newMsg = await channel.send({ embeds: [leaderboardEmbed] });
     leaderboardMessageId = newMsg.id;
 
   } catch (error) {
-    console.error("حدث خلل أثناء تحديث لوحة الصدارة الإدارية:", error);
+    console.error("حدث خطأ أثناء تحديث القائمة التلقائية:", error);
   }
 }
 
 client.once("ready", async () => {
-  console.log(`🔥 ${client.user.tag} تم تشغيل السيرفر بنجاح ونظام لوحة النقاط الذهبية التلقائية قائم.`);
+  console.log(`🔥 ${client.user.tag} جاهز واللوحة الذهبية الحديثة تعمل الآن بشكل مستقر.`);
   
-  // تشغيل دالة التحديث فور تشغيل البوت لأول مرة
+  // تشغيل أولي عند بدء التشغيل
   await updateLeaderboard();
   
-  // تفعيل التحديث التلقائي بشكل دوري منظم كل 10 دقائق (600,000 مللي ثانية)
+  // تحديث تلقائي دوري كل 10 دقائق منظم
   setInterval(async () => {
     await updateLeaderboard();
   }, 600000);
@@ -305,6 +308,13 @@ client.on("interactionCreate", async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
+
+      // 🏆 ربط أمر السلاش القديم/الجديد لعرض اللوحة الكاملة الحديثة جداً فوراً
+      if (commandName === "top-staff") {
+        await interaction.deferReply(); // لضمان عدم حدوث مهلة أو تعليق أثناء جلب البيانات
+        const updatedEmbed = await generateLeaderboardEmbed();
+        return await interaction.editReply({ embeds: [updatedEmbed] });
+      }
 
       if (commandName === "resign") {
         const user = options.getUser("user");
@@ -461,7 +471,7 @@ client.on("interactionCreate", async (interaction) => {
         await db.run('UPDATE staff_points SET points = ? WHERE user_id = ?', finalPoints, target.id);
         await interaction.reply({ content: `⚙️ تم تحديث نقاط ${target} بنجاح إلى \`${finalPoints}\`` });
         
-        // تحديث لوحة الصدارة فوراً عند تعديل نقاط أي إداري من المسؤولين
+        // تحديث لوحة الصدارة والأمر فوراً تلقائياً عند أي تعديل للمسؤولين
         await updateLeaderboard();
         
         return sendPointsLog('🛠️ إجراء إداري علوي للملفات', `المسؤول: ${interaction.user}\nالمستهدف: ${target}\nالإجراء: \`${action}\` بمقدار \`${amount}\` نقاط`, 0xe67e22);
