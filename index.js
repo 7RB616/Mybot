@@ -152,7 +152,7 @@ async function generateLeaderboardEmbed() {
     .setTimestamp();
 
   if (rows.length === 0) {
-    embed.setDescription("❌ **لا توجد نقاط أو تفاعل مسجل لأي إداري حتى الآن بالخادم.**");
+    embed.setDescription("❌ **لا توجد نقاط أو تفاعل مسجل لأي إداري حتى الآن .**");
     return embed;
   }
 
