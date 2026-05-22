@@ -60,7 +60,7 @@ const STAFF_ROLES = {
   "Novice Support": "1493306470199070720"
 };
 
-const MANAGER_ROLE_ID = "1493307428828090468"; // رتبة مسؤولين الإدارة
+const MANAGER_ROLE_ID = "1493307310540324885"; // رتبة مسؤولين الإدارة
 
 const activeApplications = new Set();
 const requestData = new Map();
