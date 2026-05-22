@@ -266,7 +266,7 @@ client.on("interactionCreate", async (interaction) => {
             const archiveAlert = new EmbedBuilder()
               .setTitle("🗄️ إغلاق وأرشفة الروم الإداري")
               .setColor(0xd63031)
-              .setDescription(`تمت أرشفة هذا الروم بسبب الإقالة/الاستقالة.\n**السبب:** ${reason}\n**التاريخ:** ${new Date().toLocaleDateString('en-GB')}`);
+              .setDescription(`تمت أرشفة هذا الروم بسبب التسليم/الطرد.\n**السبب:** ${reason}\n**التاريخ:** ${new Date().toLocaleDateString('en-GB')}`);
             await channel.send({ embeds: [archiveAlert] }).catch(() => {});
             
             await channel.setParent(CHANNELS.archiveCategory, { lockPermissions: true }).catch(() => {});
@@ -282,9 +282,9 @@ client.on("interactionCreate", async (interaction) => {
           .setColor(0x2f3136)
           .addFields(
             { name: "👤 الإداري المعني:", value: `<@${user.id}>`, inline: true },
-            { name: "🎖️ آخر رتبة شغلها:", value: `\`${lastRank}\``, inline: true },
+            { name: "🎖️ آخر رتبة :", value: `\`${lastRank}\``, inline: true },
             { name: "📅 تاريخ السحب:", value: `\`${new Date().toLocaleDateString('en-GB')}\``, inline: true },
-            { name: "📝 السبب المعلن:", value: `\`\`\`${reason}\`\`\`` }
+            { name: "📝 السبب :", value: `\`\`\`${reason}\`\`\`` }
           );
 
         await interaction.guild.channels.cache.get(CHANNELS.activationLog).send({ embeds: [resignEmbed] });
@@ -298,7 +298,7 @@ client.on("interactionCreate", async (interaction) => {
         const reason = options.getString("reason") || "تحديث المرتبة الإدارية";
         const member = await interaction.guild.members.fetch(user.id).catch(() => null);
 
-        if (!member) return interaction.reply({ content: "❌ هذا العضو غير موجود في الخادم.", ephemeral: true });
+        if (!member) return interaction.reply({ content: "❌ هذا العضو غير موجود في السيرفر الاداري.", ephemeral: true });
         const roleId = STAFF_ROLES[rankName];
         if (!roleId) return interaction.reply({ content: "❌ الرتبة المحددة غير صالحة بالنظام.", ephemeral: true });
 
@@ -351,7 +351,7 @@ client.on("interactionCreate", async (interaction) => {
       if (commandName === "setup-activation") {
         const panelEmbed = new EmbedBuilder()
           .setTitle("🔵 Vortex Network | نظام التفعيل الإداري المطور")
-          .setDescription("مرحباً بك في لوحة التحكم الإدارية الموحدة.\n\n> **يجب تفعيل روماتك الإدارية لعدم مخالفة القوانين وتجنب العقوبات.**\n\n*الرجاء اختيار رتبتك الإدارية الحالية من القائمة أدناه أولاً لإنشاء نموذجك المؤقت:*")
+          .setDescription(".\n\n> **يجب تفعيل روماتك الإدارية لعدم مخالفة القوانين وتجنب العقوبات.**\n\n*الرجاء اختيار رتبتك الإدارية الحالية من القائمة أدناه :*")
           .setColor(0x00d2d3)
           .setFooter({ text: "Vortex Network Automation System" });
 
