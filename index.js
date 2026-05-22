@@ -66,6 +66,7 @@ const activeApplications = new Set();
 const requestData = new Map();
 const warnEvidences = new Map(); 
 const userSelectedRole = new Map(); 
+const activeActivationRooms = new Map();
 
 // إعدادات تفاعل النقاط المطور بسيرفراتك
 const POINTS_CONFIG = {
@@ -73,6 +74,7 @@ const POINTS_CONFIG = {
   ADMIN_GUILD_ID: "1493304316906176563",
   MAIN_CHAT_ID: "1491127422278566067",
   LOG_CHANNEL_ID: "1507083912453820497",
+  LEADERBOARD_CHANNEL_ID: "1507083912453820497", // روم لوحة المتصدرين (يمكنك نسحه أو وضع روم مستقل)
   
   STAFF_ROLES: [
     "1493305553429205183",
@@ -92,6 +94,8 @@ const POINTS_CONFIG = {
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 let db;
+let leaderboardMessageId = null; // لتتبع رسالة قائمة النقاط وتحديثها تلقائياً
+
 (async () => {
     db = await open({ filename: './admin_points.db', driver: sqlite3.Database });
     await db.exec(`
@@ -136,21 +140,80 @@ async function sendPointsLog(title, description, color = 0x3498db) {
   logChannel.send({ embeds: [embed] });
 }
 
+// 🏆 دالة تحديث قائمة نقاط الإدارة الكاملة تلقائياً (اللون الذهبي الملكي والمنظم جداً)
+async function updateLeaderboard() {
+  try {
+    const channel = await client.channels.fetch(POINTS_CONFIG.LEADERBOARD_CHANNEL_ID).catch(() => null);
+    if (!channel) return;
+
+    // جلب جميع طاقم الإدارة المسجلين والذين يملكون نقاط بالترتيب التنازلي
+    const rows = await db.all('SELECT user_id, points FROM staff_points WHERE points > 0 ORDER BY points DESC');
+    
+    const leaderboardEmbed = new EmbedBuilder()
+      .setTitle("👑 قائمة تفاعل ونقاط طاقم الإدارة العام")
+      .setDescription("يتم تحديث هذه اللوحة تلقائياً وبشكل دوري لعرض مستويات أداء كافة المسؤولين.\n\n" + "```\nالمركز │ الإداري المستهدف          │ مجموع النقاط\n───────┼───────────────────────────┼─────────────\n" + 
+        (rows.length === 0 ? "        لا توجد نقاط مسجلة حالياً لأي إداري.        " : 
+        rows.map((row, index) => {
+          const rank = String(index + 1).padEnd(5, ' ');
+          // محاكاة تنظيف وعرض النصوص بشكل منظم جداً داخل البايند الخشبي للمصفوفة
+          const pointsStr = String(row.points).padEnd(11, ' ');
+          return `${rank} │ <@${row.user_id}>`.padEnd(35, ' ') + ` │ ${pointsStr}`;
+        }).join('\n')) + "\n```")
+      .setColor(0xd4af37) // 🌟 لون ذهبي ملكي مميز وثابت للوحة التفاعل
+      .setFooter({ text: "آخر تحديث تلقائي للنظام" })
+      .setTimestamp();
+
+    // تنظيم طريقة عرض المنشن بداخل الحقول الحية لسهولة الوصول للشخص والمركز
+    if (rows.length > 0) {
+      let formattedDescription = "🏆 **لوحة تفاعل ومجموع نقاط الطاقم الإداري:**\n\n";
+      rows.forEach((row, index) => {
+        let medal = "🔹";
+        if (index === 0) medal = "🥇";
+        else if (index === 1) medal = "🥈";
+        else if (index === 2) medal = "🥉";
+        
+        formattedDescription += `${medal} **المركز #${index + 1}** │ <@${row.user_id}> ─── 💰 **${row.points}** نقطة\n`;
+      });
+      leaderboardEmbed.setDescription(formattedDescription);
+    }
+
+    if (leaderboardMessageId) {
+      const existingMsg = await channel.messages.fetch(leaderboardMessageId).catch(() => null);
+      if (existingMsg) {
+        await existingMsg.edit({ embeds: [leaderboardEmbed] });
+        return;
+      }
+    }
+
+    // إذا لم تكن الرسالة موجودة مسبقاً، نقوم بإنشاء واحدة جديدة وحفظ رقم الـ ID الخاص بها
+    const newMsg = await channel.send({ embeds: [leaderboardEmbed] });
+    leaderboardMessageId = newMsg.id;
+
+  } catch (error) {
+    console.error("حدث خلل أثناء تحديث لوحة الصدارة الإدارية:", error);
+  }
+}
+
 client.once("ready", async () => {
-  console.log(`🔥 ${client.user.tag} تم تشغيل السيرفر وتحديث نظام الحماية والريأكشنز بنجاح.`);
+  console.log(`🔥 ${client.user.tag} تم تشغيل السيرفر بنجاح ونظام لوحة النقاط الذهبية التلقائية قائم.`);
+  
+  // تشغيل دالة التحديث فور تشغيل البوت لأول مرة
+  await updateLeaderboard();
+  
+  // تفعيل التحديث التلقائي بشكل دوري منظم كل 10 دقائق (600,000 مللي ثانية)
+  setInterval(async () => {
+    await updateLeaderboard();
+  }, 600000);
 });
 
-// نظام التصحيح التلقائي وريأكشن غرف التقارير الذكي + نقاط الشات العام
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // نزول ريأكشن التصحيح تلقائياً عند إرسال أي تقرير من إداري
   if (message.channel.name && message.channel.name.includes("-تقارير")) {
     await message.react("✅").catch(() => {});
     await message.react("❌").catch(() => {});
   }
 
-  // احتساب نقاط الشات العام للروم المعتمد
   if (message.guildId === POINTS_CONFIG.MAIN_GUILD_ID && message.channelId === POINTS_CONFIG.MAIN_CHAT_ID) {
     if (message.content.length < POINTS_CONFIG.POINTS.MIN_LENGTH) return; 
     const userId = message.author.id;
@@ -171,7 +234,6 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// ⚡ حماية ريأكشن غرف التقارير (السماح فقط للـ Admin وأصحاب رتبة مسؤولين الإدارة بالتصحيح)
 client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) {
@@ -182,18 +244,15 @@ client.on("messageReactionAdd", async (reaction, user) => {
     const member = await reaction.message.guild.members.fetch(user.id).catch(() => null);
     if (!member) return;
 
-    // فحص الصلاحية والرتبة المستهدفة المسموح لها بالتفاعل
     const hasAdminPermission = member.permissions.has(PermissionFlagsBits.Administrator);
-    const hasManagerRole = member.roles.cache.has(MANAGER_ROLE_ID); // رتبة مسؤولين الإدارة (1493307428828090468)
+    const hasManagerRole = member.roles.cache.has(MANAGER_ROLE_ID); 
 
-    // إذا لم تتوفر الصلاحية أو الرتبة، يتم حذف ريأكشن الشخص فوراً
     if (!hasAdminPermission && !hasManagerRole) {
       await reaction.users.remove(user.id).catch(() => {});
     }
   }
 });
 
-// نقاط تفاعل غرف الفويس
 client.on('voiceStateUpdate', async (oldState, newState) => {
   if (oldState.guild.id !== POINTS_CONFIG.MAIN_GUILD_ID) return;
   const userId = newState.id;
@@ -235,7 +294,6 @@ async function handleVoicePointsRecord(userId) {
   sendPointsLog('🎙️ تحديث تفاعل صوتي', `الإداري: <@${userId}>\nالمدة: \`${minutesCount}\` دقيقة\nالنقاط المضافة: \`+${pointsToAdd}\` نقطة.`, 0x2ecc71);
 }
 
-// دالة تجريد العضو من رتب الإدارة الحالية المسجلة بالنظام
 async function stripStaffRoles(member) {
   const rolesToRemove = Object.values(STAFF_ROLES);
   const currentRoles = member.roles.cache.map(r => r.id);
@@ -243,13 +301,11 @@ async function stripStaffRoles(member) {
   await member.roles.set(filteredRoles).catch(() => {});
 }
 
-// ================= نظام إدارة التفاعلات، الأزرار، المودلز والقوائم =================
 client.on("interactionCreate", async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
 
-      // 1. أمر الاستقالة / سحب الرتب والأرشفة المحسن
       if (commandName === "resign") {
         const user = options.getUser("user");
         const reason = options.getString("reason");
@@ -266,7 +322,7 @@ client.on("interactionCreate", async (interaction) => {
             const archiveAlert = new EmbedBuilder()
               .setTitle("🗄️ إغلاق وأرشفة الروم الإداري")
               .setColor(0xd63031)
-              .setDescription(`تمت أرشفة هذا الروم بسبب التسليم/الطرد.\n**السبب:** ${reason}\n**التاريخ:** ${new Date().toLocaleDateString('en-GB')}`);
+              .setDescription(`تمت أرشفة هذا الروم بسبب الإقالة/الاستقالة.\n**السبب:** ${reason}\n**التاريخ:** ${new Date().toLocaleDateString('en-GB')}`);
             await channel.send({ embeds: [archiveAlert] }).catch(() => {});
             
             await channel.setParent(CHANNELS.archiveCategory, { lockPermissions: true }).catch(() => {});
@@ -282,28 +338,27 @@ client.on("interactionCreate", async (interaction) => {
           .setColor(0x2f3136)
           .addFields(
             { name: "👤 الإداري المعني:", value: `<@${user.id}>`, inline: true },
-            { name: "🎖️ آخر رتبة :", value: `\`${lastRank}\``, inline: true },
+            { name: "🎖️ آخر رتبة شغلها:", value: `\`${lastRank}\``, inline: true },
             { name: "📅 تاريخ السحب:", value: `\`${new Date().toLocaleDateString('en-GB')}\``, inline: true },
-            { name: "📝 السبب :", value: `\`\`\`${reason}\`\`\`` }
+            { name: "📝 السبب المعلن:", value: `\`\`\`${reason}\`\`\`` }
           );
 
         await interaction.guild.channels.cache.get(CHANNELS.activationLog).send({ embeds: [resignEmbed] });
         return interaction.reply({ content: "✅ تم سحب الرتب وتجريد الصلاحيات وأرشفة الرومات بنجاح.", ephemeral: true });
       }
 
-      // 2. أمر الرتب والترقيات المصلح جذرياً لمنع المشاكل السابقة
       if (commandName === "rank") {
         const user = options.getUser("user");
         const rankName = options.getString("rank");
         const reason = options.getString("reason") || "تحديث المرتبة الإدارية";
         const member = await interaction.guild.members.fetch(user.id).catch(() => null);
 
-        if (!member) return interaction.reply({ content: "❌ هذا العضو غير موجود في السيرفر الاداري.", ephemeral: true });
+        if (!member) return interaction.reply({ content: "❌ هذا العضو غير موجود في الخادم.", ephemeral: true });
         const roleId = STAFF_ROLES[rankName];
         if (!roleId) return interaction.reply({ content: "❌ الرتبة المحددة غير صالحة بالنظام.", ephemeral: true });
 
-        await stripStaffRoles(member); // مسح الرتب القديمة أولاً لتهيئة الحساب
-        await member.roles.add(roleId).catch(() => {}); // إعطاء الرتبة الجديدة مباشرة
+        await stripStaffRoles(member); 
+        await member.roles.add(roleId).catch(() => {}); 
 
         const rankUpdateEmbed = new EmbedBuilder()
           .setTitle("⚡ تحديث رتبة إدارية / ترقية")
@@ -318,7 +373,6 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: `✅ تم تحديث المرتبة الإدارية لـ <@${user.id}> إلى **${rankName}** بنجاح.`, ephemeral: true });
       }
 
-      // أمر التحذيرات المطور بالإلغاء والدليل الحصري
       if (commandName === "warn") {
         const user = options.getUser("user");
         const num = options.getInteger("number");
@@ -347,11 +401,10 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: `✅ تم إصدار التحذير بنجاح وإرساله للوق.`, ephemeral: true });
       }
 
-      // 3. أمر إعداد لوحة التفعيل باللون الأزرق وقائمة الرتب الحديثة
       if (commandName === "setup-activation") {
         const panelEmbed = new EmbedBuilder()
           .setTitle("🔵 Vortex Network | نظام التفعيل الإداري المطور")
-          .setDescription(".\n\n> **يجب تفعيل روماتك الإدارية لعدم مخالفة القوانين وتجنب العقوبات.**\n\n*الرجاء اختيار رتبتك الإدارية الحالية من القائمة أدناه :*")
+          .setDescription("مرحباً بك في لوحة التحكم الإدارية الموحدة.\n\n> **يجب تفعيل روماتك الإدارية لعدم مخالفة القوانين وتجنب العقوبات.**\n\n*الرجاء اختيار رتبتك الإدارية الحالية من القائمة أدناه أولاً لإنشاء نموذجك المؤقت:*")
           .setColor(0x00d2d3)
           .setFooter({ text: "Vortex Network Automation System" });
 
@@ -371,7 +424,6 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "✅ تم إرسال لوحة التفعيل الحديثة بالخادم الحالي.", ephemeral: true });
       }
 
-      // أوامر تفاعل ونقاط الإدارة القديمة
       if (commandName === 'points') {
         const target = options.getUser('user') || interaction.user;
         if (!(await isStaffMember(target.id))) return interaction.reply({ content: '❌ هذا العضو ليس من ضمن طاقم الإدارة المعتمد.', ephemeral: true });
@@ -408,40 +460,59 @@ client.on("interactionCreate", async (interaction) => {
 
         await db.run('UPDATE staff_points SET points = ? WHERE user_id = ?', finalPoints, target.id);
         await interaction.reply({ content: `⚙️ تم تحديث نقاط ${target} بنجاح إلى \`${finalPoints}\`` });
+        
+        // تحديث لوحة الصدارة فوراً عند تعديل نقاط أي إداري من المسؤولين
+        await updateLeaderboard();
+        
         return sendPointsLog('🛠️ إجراء إداري علوي للملفات', `المسؤول: ${interaction.user}\nالمستهدف: ${target}\nالإجراء: \`${action}\` بمقدار \`${amount}\` نقاط`, 0xe67e22);
       }
     }
 
-    // --- معالجة القوائم المنسدلة لإنشاء الروم المؤقت الذكي والتلقائي ---
     if (interaction.isStringSelectMenu()) {
       if (interaction.customId === "select_activation_role") {
+        const userId = interaction.user.id;
+
+        if (activeActivationRooms.has(userId)) {
+          const existingChannelId = activeActivationRooms.get(userId);
+          const checkChannel = interaction.guild.channels.cache.get(existingChannelId);
+          if (checkChannel) {
+            return interaction.reply({
+              content: `❌ لديك روم تفعيل مفتوح وقائم بالفعل حالياً! الرجاء إكمال بيانات استمارتك بداخل الروم التالي ومتابعة طلبك: <#${existingChannelId}>`,
+              ephemeral: true
+            });
+          } else {
+            activeActivationRooms.delete(userId);
+          }
+        }
+
         const selectedRole = interaction.values[0];
-        userSelectedRole.set(interaction.user.id, selectedRole);
+        userSelectedRole.set(userId, selectedRole);
 
         const tempChannel = await interaction.guild.channels.create({
           name: `تفعيل-${interaction.user.username}`,
           type: ChannelType.GuildText,
           permissionOverwrites: [
             { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-            { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+            { id: userId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
           ]
         });
 
+        activeActivationRooms.set(userId, tempChannel.id);
+
         const startEmbed = new EmbedBuilder()
           .setTitle("📝 استمارة معلومات التفعيل الإداري")
-          .setDescription(`أهلاً بك يا <@${interaction.user.id}>، لقد قمت باختيار رتبة: **${selectedRole}**.\nاضغط على الزر أدناه لتعبئة الاستمارة والبيانات المطلوبة لإنهاء التفعيل.`)
+          .setDescription(`أهلاً بك يا <@${userId}>، لقد قمت باختيار رتبة: **${selectedRole}**.\nاضغط على الزر أدناه لتعبئة الاستمارة والبيانات المطلوبة لإنهاء التفعيل.`)
           .setColor(0x00d2d3);
 
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`open_act_modal_${interaction.user.id}`).setLabel("✍️ تعبئة الاستمارة").setStyle(ButtonStyle.Success)
+          new ButtonBuilder().setCustomId(`open_act_modal_${userId}`).setLabel("✍️ تعبئة الاستمارة").setStyle(ButtonStyle.Success)
         );
 
-        await tempChannel.send({ content: `<@${interaction.user.id}> الروم المؤقت الخاص بك جاهز.`, embeds: [startEmbed], components: [row] });
+        await tempChannel.send({ content: `<@${userId}> الروم المؤقت الخاص بك جاهز.`, embeds: [startEmbed], components: [row] });
         return interaction.reply({ content: `✅ تم إنشاء روم مؤقت خاص بك لتعبئة البيانات: <#${tempChannel.id}>`, ephemeral: true });
       }
     }
 
-    // --- معالجة الضغط على الأزرار ونظام القبول والوارنات ---
     if (interaction.isButton()) {
       const customId = interaction.customId;
 
@@ -465,7 +536,6 @@ client.on("interactionCreate", async (interaction) => {
         return;
       }
 
-      // عند ضغط الإدارة العليا على زر القبول بداخل روم اللوق المخصص
       if (customId.startsWith("approve_activation_")) {
         const [, , userId, rankName, ingameName, ingameId] = customId.split("_");
         
@@ -479,10 +549,8 @@ client.on("interactionCreate", async (interaction) => {
         const roleId = STAFF_ROLES[rankName];
         if (roleId) await member.roles.add(roleId).catch(() => {});
 
-        // 1. تغيير اسم العضو فوراً بناءً على استمارة التفعيل (الاسم - الايدي)
         await member.setNickname(`${ingameName} - ${ingameId}`).catch(() => {});
 
-        // 2. إنشاء كاتجوري يحمل (يوزر نيم حسابه + رتبته الإدارية)
         const staffCategory = await interaction.guild.channels.create({
           name: `┃ ${member.user.username} - ${rankName}`,
           type: ChannelType.GuildCategory,
@@ -492,17 +560,14 @@ client.on("interactionCreate", async (interaction) => {
           ]
         });
 
-        // 3. إنشاء غرف التواصل والتقارير الحديثة جداً بداخل الكاتجوري الجديد
         const commChannel = await interaction.guild.channels.create({ name: `💬-تواصل-${member.user.username}`, parent: staffCategory.id });
         await commChannel.send(`أهلاً بك في طاقم إدارة فورتيكس <@${member.id}>.\nهنا روم التواصل الخاص بك إذا واجهتك مشكلة أو لطلب الإجازات.`);
 
         const reportChannel = await interaction.guild.channels.create({ name: `📝-تقارير-${member.user.username}`, parent: staffCategory.id });
         await reportChannel.send(`**نموذج التقارير الإدارية المعتمد:**\n\nتقرير رقم :\nتاريخ اليوم :\nشرح التقرير :`);
 
-        // 4. إرسال الرسالة الترحيبية الفخمة بالخاص للإداري المقبول
         await member.send("✉️ **رسالة إدارية:** تم تسليمك روماتك الخاصة ونحن ننتظر منك المزيد من العطاء. بالتوفيق لك في مسيرتك مع Vortex Network!").catch(() => {});
 
-        // 5. تحديث رسالة اللوق ليظهر اسم المسؤول الحالي الذي وافق على التفعيل
         const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
           .setColor(0x2ecc71)
           .setTitle("✅ تم قبول وتفعيل الإداري بنجاح")
@@ -512,7 +577,21 @@ client.on("interactionCreate", async (interaction) => {
         return;
       }
 
-      // زر إلغاء التحذير الفوري
+      if (customId.startsWith("deny_activation_")) {
+        const userId = customId.split("_")[2];
+        
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: "❌ هذا الإجراء مخصص لمسؤولي الإدارة العليا فقط.", ephemeral: true });
+        }
+
+        const modal = new ModalBuilder().setCustomId(`deny_reason_modal_${userId}`).setTitle("❌ سبب رفض التفعيل الإداري");
+        const reasonInput = new TextInputBuilder().setCustomId("deny_reason_text").setLabel("اكتب سبب رفض طلب التفعيل بالتفصيل:").setStyle(TextInputStyle.Paragraph).setRequired(true);
+        modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
+        
+        await interaction.showModal(modal);
+        return;
+      }
+
       if (customId.startsWith("cancel_warn_")) {
         const [, , adminId, targetId, warnNum] = customId.split("_");
         if (!interaction.member.roles.cache.has(MANAGER_ROLE_ID)) return interaction.reply({ content: "❌ هذا الزر مخصص للإدارة العليا فقط.", ephemeral: true });
@@ -526,7 +605,6 @@ client.on("interactionCreate", async (interaction) => {
         return;
       }
 
-      // زر الدليل الحصري والمحمي للتحذيرات
       if (customId.startsWith("show_evidence_")) {
         const [, , adminId, targetId] = customId.split("_");
         if (!warnEvidences.has(interaction.message.id)) {
@@ -542,19 +620,19 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
-    // --- معالجة تسليم النوافذ المنبثقة (Modals) والتدمير الذاتي التلقائي للروم المؤقت ---
     if (interaction.isModalSubmit()) {
       if (interaction.customId === "submit_act_modal") {
+        const userId = interaction.user.id;
         const ingameName = interaction.fields.getTextInputValue("ingame_name");
         const ingameId = interaction.fields.getTextInputValue("ingame_id");
         const acceptorName = interaction.fields.getTextInputValue("acceptor_name");
-        const rankName = userSelectedRole.get(interaction.user.id) || "Novice Support";
+        const rankName = userSelectedRole.get(userId) || "Novice Support";
 
         const logEmbed = new EmbedBuilder()
           .setTitle("📥 طلب تفعيل إداري جديد قيد المراجعة")
           .setColor(0xe67e22)
           .addFields(
-            { name: "👤 العضو المتقدم:", value: `<@${interaction.user.id}> (\`${interaction.user.id}\`)`, inline: true },
+            { name: "👤 العضو المتقدم:", value: `<@${userId}> (\`${userId}\`)`, inline: true },
             { name: "🎖️ الرتبة المطلوبة:", value: `\`${rankName}\``, inline: true },
             { name: "🎮 اسم الحساب بالخادم:", value: `\`${ingameName}\``, inline: true },
             { name: "🆔 آيدي الحساب بالخادم:", value: `\`${ingameId}\``, inline: true },
@@ -563,25 +641,50 @@ client.on("interactionCreate", async (interaction) => {
           .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`approve_activation_${interaction.user.id}_${rankName}_${ingameName}_${ingameId}`)
-            .setLabel("✅ قبول التفعيل وإنشاء الرومات")
-            .setStyle(ButtonStyle.Success)
+          new ButtonBuilder().setCustomId(`approve_activation_${userId}_${rankName}_${ingameName}_${ingameId}`).setLabel("✅ قبول وإنشاء الرومات").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`deny_activation_${userId}`).setLabel("❌ رفض التفعيل").setStyle(ButtonStyle.Danger)
         );
 
         const logChannel = interaction.guild.channels.cache.get(CHANNELS.activationLog);
         if (logChannel) {
-          await logChannel.send({ content: `🔔 منشن المتقدم للتفعيل: <@${interaction.user.id}>`, embeds: [logEmbed], components: [row] });
+          await logChannel.send({ content: `🔔 منشن المتقدم للتفعيل: <@${userId}>`, embeds: [logEmbed], components: [row] });
         }
 
         await interaction.reply({ content: "✅ تم تسليم استمارتك إلى لوق الإدارة العليا بنجاح! سيتم تدمير هذا الروم المؤقت تلقائياً الآن...", ephemeral: true });
         
-        // التدمير الذاتي والتلقائي للغرفة المؤقتة فوراً بعد 3 ثوانٍ من إرسال البيانات للوق
+        activeActivationRooms.delete(userId);
+
         setTimeout(() => {
           interaction.channel.delete().catch(() => {});
         }, 3000);
 
-        userSelectedRole.delete(interaction.user.id); 
+        userSelectedRole.delete(userId); 
+        return;
+      }
+
+      if (interaction.customId.startsWith("deny_reason_modal_")) {
+        const targetUserId = interaction.customId.split("_")[3];
+        const denyReason = interaction.fields.getTextInputValue("deny_reason_text");
+
+        const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
+        if (targetMember) {
+          const alertDm = new EmbedBuilder()
+            .setTitle("❌ تحديث بخصوص طلب التفعيل الإداري")
+            .setDescription(`مرحباً بك، يؤسفنا إعلامك بأنه قد تم **رفض طلب تفعيل روماتك وصلاحياتك الإدارية** من قبل الإدارة العليا لشبكة Vortex.\n\n**📝 السبب المعلن للرفض:**\n\`\`\`${denyReason}\`\`\``)
+            .setColor(0xe74c3c)
+            .setTimestamp();
+          await targetMember.send({ embeds: [alertDm] }).catch(() => {});
+        }
+
+        const deniedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+          .setColor(0xd63031)
+          .setTitle("❌ تم رفض طلب التفعيل الإداري")
+          .addFields(
+            { name: "🛡️ المسؤول الرافض:", value: `<@${interaction.user.id}>`, inline: true },
+            { name: "📝 سبب الرفض:", value: `\`${denyReason}\``, inline: false }
+          );
+
+        await interaction.update({ embeds: [deniedEmbed], components: [] });
         return;
       }
 
