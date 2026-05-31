@@ -98,7 +98,7 @@ const MAIN_SERVER_ROLES = {
   ],
   MAIN_ADMIN_ROLE_ID: "1491282664441774080", // رتبة MTA: Network Administrators بالرئيسي
 
-  // 👑 رتب المانجمينت العليا بالسيرفر الإداري (تمنح رتبة المانجمينت + الأدمين بالرئيسي)
+  // 👑 جميع رتب المانجمينت العليا بالسيرفر الإداري (تمنح رتبة المانجمينت والأدمن بالرئيسي)
   MANAGEMENTS: [
     STAFF_ROLES["Executive Management"],
     STAFF_ROLES["Conductor Management"],
@@ -109,7 +109,13 @@ const MAIN_SERVER_ROLES = {
     STAFF_ROLES["- Support Manager"]
   ],
   MAIN_MANAGEMENT_ROLE_ID: "1491282871783129250", // رتبة Senior Managment بالرئيسي
-  SENIOR_MANAGEMENT_ADDITIONAL_ID: "1491283162989465731" // 👈 رتبة المانجمينت الإضافية الجديدة المربوطة تلقائياً
+  
+  // 🎯 [تحديث النطاق الحصري]: رتب المانجمينت المستهدفة للحصول على الرتبة الإضافية الجديدة (من نفويس مانجمينت إلى سينيور مانجمينت)
+  SPECIFIC_MANAGEMENTS: [
+    STAFF_ROLES["Senior Management"],
+    STAFF_ROLES["Novice Management"]
+  ],
+  SPECIAL_ADDITIONAL_ROLE_ID: "1491282962082173130" // 👈 الرتبة المطلوبة الجديدة في السيرفر الرئيسي
 };
 
 // ذاكرة حفظ البيانات المؤقتة
@@ -203,7 +209,7 @@ client.once("ready", async () => {
   console.log(`🔥 ${client.user.tag} جاهز تماماً. نظام المزامنة الفوري والآمن مستقر.`);
 });
 
-// ⚡ [دالة معالجة المزامنة الذكية الفورية للسيرفر الرئيسي - النسخة المحسنة الشاملة للتجريد والتعديل والاضافة]
+// ⚡ [دالة معالجة المزامنة الذكية الفورية للسيرفر الرئيسي - نسخة فرز نطاق المانجمينت الحصرية المحدثة]
 async function syncMemberRolesToMainServer(adminMember) {
   const mainGuild = client.guilds.cache.get(POINTS_CONFIG.MAIN_GUILD_ID);
   if (!mainGuild) return;
@@ -237,12 +243,16 @@ async function syncMemberRolesToMainServer(adminMember) {
   // 3. التحقق من رتب المانجمينت العليا (إدارة عليا)
   const hasMgmtRole = adminRoles.some(role => MAIN_SERVER_ROLES.MANAGEMENTS.includes(role.id));
   if (hasMgmtRole) {
-    // إذا كان مانجمينت يأخذ رتبة الأدمن + المانجمينت الرئيسية + الرتبة الإضافية الجديدة معاً
     if (!rolesToApplyInMain.includes(MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID)) {
       rolesToApplyInMain.push(MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID);
     }
-    rolesToApplyInMain.push(MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID);
-    rolesToApplyInMain.push(MAIN_SERVER_ROLES.SENIOR_MANAGEMENT_ADDITIONAL_ID); 
+    rolesToApplyInMain.push(MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID); // يمنح رتبة سينيور مانجمينت الأساسية بالرئيسي
+    
+    // 🎯 [الفحص الحصري الجديد]: التحقق هل رتبته الحالية تقع في نطاق (Novice Management و Senior Management) فقط؟
+    const fallsInSpecificMgmtRange = adminRoles.some(role => MAIN_SERVER_ROLES.SPECIFIC_MANAGEMENTS.includes(role.id));
+    if (fallsInSpecificMgmtRange) {
+      rolesToApplyInMain.push(MAIN_SERVER_ROLES.SPECIAL_ADDITIONAL_ROLE_ID); // يمنح الرتبة الإضافية الجديدة المطلوبة
+    }
   }
 
   // 🧼 جلب رتب العضو الحالية بالسيرفر الرئيسي لتصفيتها (للحفاظ على رتب الألعاب والمواطنة)
@@ -251,13 +261,13 @@ async function syncMemberRolesToMainServer(adminMember) {
     id !== MAIN_SERVER_ROLES.MTA_CREW && 
     id !== MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID && 
     id !== MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID &&
-    id !== MAIN_SERVER_ROLES.SENIOR_MANAGEMENT_ADDITIONAL_ID
+    id !== MAIN_SERVER_ROLES.SPECIAL_ADDITIONAL_ROLE_ID // تنظيف رتبة النطاق الإضافية عند السحب أو التعديل العكسي
   );
 
-  // دمج الرتب العادية النظيفة مع الرتب الإدارية الجديدة المستحقة حالياً فقط للتحديث العكسي
+  // دمج الرتب العادية النظيفة مع الرتب الإدارية المستحقة حالياً فقط للتحديث الفوري العكسي
   const finalRolesSet = [...new Set([...cleanRoles, ...rolesToApplyInMain])];
   
-  // تطبيق القائمة الجديدة مباشرة لإسقاط أي رتبة مسحوبة يدويّاً بنفس اللحظة
+  // تطبيق القائمة المحدثة مباشرة في ديسكورد لتحديث رتب حسابه بالرئيسي فوراً
   await mainMember.roles.set(finalRolesSet).catch(err => console.error(`❌ فشل تعيين الرتب بالمزامنة: ${err.message}`));
 }
 
@@ -268,7 +278,7 @@ async function stripMainServerStaffRoles(mainMember) {
     id !== MAIN_SERVER_ROLES.MTA_CREW && 
     id !== MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID && 
     id !== MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID &&
-    id !== MAIN_SERVER_ROLES.SENIOR_MANAGEMENT_ADDITIONAL_ID
+    id !== MAIN_SERVER_ROLES.SPECIAL_ADDITIONAL_ROLE_ID
   );
   await mainMember.roles.set(filtered).catch(() => {});
 }
