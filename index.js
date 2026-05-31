@@ -105,10 +105,11 @@ const MAIN_SERVER_ROLES = {
     STAFF_ROLES["Head Management"],
     STAFF_ROLES["Senior Management"],
     STAFF_ROLES["Novice Management"],
-    STAFF_ROLES["- Admin Manager"],    // تم تعديلها لتصبح رتبة إدارية عليا بنجاح
+    STAFF_ROLES["- Admin Manager"],    
     STAFF_ROLES["- Support Manager"]
   ],
-  MAIN_MANAGEMENT_ROLE_ID: "1491282871783129250" // رتبة Senior Managment بالرئيسي
+  MAIN_MANAGEMENT_ROLE_ID: "1491282871783129250", // رتبة Senior Managment بالرئيسي
+  SENIOR_MANAGEMENT_ADDITIONAL_ID: "1491283162989465731" // 👈 رتبة المانجمينت الإضافية الجديدة المربوطة تلقائياً
 };
 
 // ذاكرة حفظ البيانات المؤقتة
@@ -202,7 +203,7 @@ client.once("ready", async () => {
   console.log(`🔥 ${client.user.tag} جاهز تماماً. نظام المزامنة الفوري والآمن مستقر.`);
 });
 
-// ⚡ [دالة معالجة المزامنة الذكية الفورية للسيرفر الرئيسي]
+// ⚡ [دالة معالجة المزامنة الذكية الفورية للسيرفر الرئيسي - النسخة المحسنة الشاملة للتجريد والتعديل والاضافة]
 async function syncMemberRolesToMainServer(adminMember) {
   const mainGuild = client.guilds.cache.get(POINTS_CONFIG.MAIN_GUILD_ID);
   if (!mainGuild) return;
@@ -217,14 +218,14 @@ async function syncMemberRolesToMainServer(adminMember) {
   const hasAnyStaffRole = adminRoles.some(role => allStaffRoleIds.includes(role.id));
 
   if (!hasAnyStaffRole) {
-    // إذا سُحبت كل الرتب، نظّف حسابه فوراً في الرئيسي
+    // إذا سُحبت كل الرتب يدوياً، نظّف حسابه فوراً في الرئيسي
     await stripMainServerStaffRoles(mainMember);
     return;
   }
 
   let rolesToApplyInMain = [];
 
-  // 1. منح رتبة MTA Crew الأساسية
+  // 1. منح رتبة MTA Crew الأساسية لأن لديه رتبة إدارية
   rolesToApplyInMain.push(MAIN_SERVER_ROLES.MTA_CREW);
 
   // 2. التحقق من رتب الأدمنية
@@ -233,37 +234,46 @@ async function syncMemberRolesToMainServer(adminMember) {
     rolesToApplyInMain.push(MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID);
   }
 
-  // 3. التحقق من رتب المانجمينت العليا
+  // 3. التحقق من رتب المانجمينت العليا (إدارة عليا)
   const hasMgmtRole = adminRoles.some(role => MAIN_SERVER_ROLES.MANAGEMENTS.includes(role.id));
   if (hasMgmtRole) {
-    rolesToApplyInMain.push(MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID); 
-    rolesToApplyInMain.push(MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID); 
+    // إذا كان مانجمينت يأخذ رتبة الأدمن + المانجمينت الرئيسية + الرتبة الإضافية الجديدة معاً
+    if (!rolesToApplyInMain.includes(MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID)) {
+      rolesToApplyInMain.push(MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID);
+    }
+    rolesToApplyInMain.push(MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID);
+    rolesToApplyInMain.push(MAIN_SERVER_ROLES.SENIOR_MANAGEMENT_ADDITIONAL_ID); 
   }
 
-  // الحفاظ على رتب العضو غير الإدارية بالخادم الرئيسي ودمجها مع التحديث
+  // 🧼 جلب رتب العضو الحالية بالسيرفر الرئيسي لتصفيتها (للحفاظ على رتب الألعاب والمواطنة)
   const currentMainRoles = mainMember.roles.cache.map(r => r.id);
   const cleanRoles = currentMainRoles.filter(id => 
     id !== MAIN_SERVER_ROLES.MTA_CREW && 
     id !== MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID && 
-    id !== MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID
+    id !== MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID &&
+    id !== MAIN_SERVER_ROLES.SENIOR_MANAGEMENT_ADDITIONAL_ID
   );
 
+  // دمج الرتب العادية النظيفة مع الرتب الإدارية الجديدة المستحقة حالياً فقط للتحديث العكسي
   const finalRolesSet = [...new Set([...cleanRoles, ...rolesToApplyInMain])];
+  
+  // تطبيق القائمة الجديدة مباشرة لإسقاط أي رتبة مسحوبة يدويّاً بنفس اللحظة
   await mainMember.roles.set(finalRolesSet).catch(err => console.error(`❌ فشل تعيين الرتب بالمزامنة: ${err.message}`));
 }
 
-// دالة تنظيف رتب السيرفر الرئيسي للإداري المستقيل
+// دالة تنظيف رتب السيرفر الرئيسي للإداري المستقيل أو المسحوب منه الصلاحيات بالكامل
 async function stripMainServerStaffRoles(mainMember) {
   const currentRoles = mainMember.roles.cache.map(r => r.id);
   const filtered = currentRoles.filter(id => 
     id !== MAIN_SERVER_ROLES.MTA_CREW && 
     id !== MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID && 
-    id !== MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID
+    id !== MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID &&
+    id !== MAIN_SERVER_ROLES.SENIOR_MANAGEMENT_ADDITIONAL_ID
   );
   await mainMember.roles.set(filtered).catch(() => {});
 }
 
-// 🔄 [الاستماع المباشر للأحداث] - تحديث فوري عند تعديل رتب العضو بسيرفر الإدارة
+// 🔄 [الاستماع المباشر للأحداث] - تحديث فوري عند تعديل رتب العضو يدوياً بسيرفر الإدارة
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
   if (newMember.guild.id !== POINTS_CONFIG.ADMIN_GUILD_ID) return;
   await syncMemberRolesToMainServer(newMember);
