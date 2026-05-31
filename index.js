@@ -23,12 +23,12 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-// مستودعات الرومات والكاتجوريز المحددة من قبلك
+// 📁 مستودعات الرومات والكاتجوريز المحددة بسيرفراتك
 const CHANNELS = {
   activationPanelChannel: "1504931178958950490", // روم لوحة التفعيل
-  activationLog: "1507083912453820497",          // روم اللوق الموحد للتفعيل والنقاط
-  warnLog: "1502685588535640195",
-  archiveCategory: "1505649145229082624"         // كاتجوري الأرشيف المستهدف للسحب
+  activationLog: "1507083912453820497",          // لوق التفعيل والنقاط الموحد
+  warnLog: "1502685588535640195",                // لوق التحذيرات
+  archiveCategory: "1505649145229082624"         // كاتجوري أرشيف الرومات عند الاستقالة
 };
 
 const TEAM_ROLES = {
@@ -43,6 +43,7 @@ const WARN_ROLES = {
   3: "1493310315910140046"
 };
 
+// 🏛️ رتب سيرفر الإدارة الثابتة (الريموت كنترول للتحكم والأوامر)
 const STAFF_ROLES = {
   "Executive Management": "1493304989794435212",
   "Conductor Management": "1493305170854019207",
@@ -60,20 +61,14 @@ const STAFF_ROLES = {
   "Novice Support": "1493306470199070720"
 };
 
-const MANAGER_ROLE_ID = "1493307310540324885"; // رتبة مسؤولين الإدارة
+const MANAGER_ROLE_ID = "1493307310540324885"; // رتبة مسؤولي الإدارة العليا للتحقق
 
-const activeApplications = new Set();
-const requestData = new Map();
-const warnEvidences = new Map(); 
-const userSelectedRole = new Map(); 
-const activeActivationRooms = new Map();
-
-// إعدادات تفاعل النقاط المطور بسيرفراتك
+// 🔄 [إعدادات نظام المزامنة والتفاعل المطور للسيرفرين]
 const POINTS_CONFIG = {
-  MAIN_GUILD_ID: "1489798320762130452",
-  ADMIN_GUILD_ID: "1493304316906176563",
-  MAIN_CHAT_ID: "1491127422278566067",
-  LOG_CHANNEL_ID: "1507083912453820497",
+  MAIN_GUILD_ID: "1489798320762130452",  // آيدي السيرفر الرئيسي
+  ADMIN_GUILD_ID: "1493304316906176563", // آيدي سيرفر الإدارة
+  MAIN_CHAT_ID: "1491127422278566067",    // شات التفاعل الرئيسي للحساب
+  LOG_CHANNEL_ID: "1507083912453820497",  // روم لوق تفاعل النقاط
   
   STAFF_ROLES: [
     "1493305553429205183",
@@ -90,6 +85,41 @@ const POINTS_CONFIG = {
   }
 };
 
+// 🗺️ جدول ربط رتب سيرفر الإدارة برتب السيرفر الرئيسي المحدثة بالكامل
+const MAIN_SERVER_ROLES = {
+  MTA_CREW: "1491283474391367742", // رتبة تأتي مع كل رتبة إدارية تلقائياً
+  
+  // 🛡️ رتب الأدمينية بالسيرفر الإداري (تمنح رتبة الأدمين بالرئيسي)
+  ADMINISTRATORS: [
+    STAFF_ROLES["Executive Administrator"],
+    STAFF_ROLES["Supervisor Administrator"],
+    STAFF_ROLES["Senior Administrator"],
+    STAFF_ROLES["Novice Administrator"]
+  ],
+  MAIN_ADMIN_ROLE_ID: "1491282664441774080", // رتبة MTA: Network Administrators بالرئيسي
+
+  // 👑 رتب المانجمينت العليا بالسيرفر الإداري (تمنح رتبة المانجمينت + الأدمين بالرئيسي)
+  MANAGEMENTS: [
+    STAFF_ROLES["Executive Management"],
+    STAFF_ROLES["Conductor Management"],
+    STAFF_ROLES["Head Management"],
+    STAFF_ROLES["Senior Management"],
+    STAFF_ROLES["Novice Management"],
+    STAFF_ROLES["- Admin Manager"],    // تم تعديلها لتصبح رتبة إدارية عليا بنجاح
+    STAFF_ROLES["- Support Manager"]
+  ],
+  MAIN_MANAGEMENT_ROLE_ID: "1491282871783129250" // رتبة Senior Managment بالرئيسي
+};
+
+// ذاكرة حفظ البيانات المؤقتة
+const activeApplications = new Set();
+const requestData = new Map();
+const warnEvidences = new Map(); 
+const userSelectedRole = new Map(); 
+const activeActivationRooms = new Map();
+const processedActivations = new Set(); // لحظر نقرات قبول الاستمارة المتكررة
+
+// إعداد وتجهيز داتابيز النقاط SQLite
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 let db;
@@ -138,7 +168,6 @@ async function sendPointsLog(title, description, color = 0x3498db) {
   logChannel.send({ embeds: [embed] });
 }
 
-// 👑 دالة توليد اللوحة الحديثة جداً عند استدعاء الأمر
 async function generateLeaderboardEmbed() {
   const rows = await db.all('SELECT user_id, points FROM staff_points WHERE points > 0 ORDER BY points DESC');
   
@@ -157,7 +186,6 @@ async function generateLeaderboardEmbed() {
   let listContent = "";
   rows.forEach((row, index) => {
     let positionIndicator = "";
-    
     if (index === 0) positionIndicator = "🥇 **المركز الأول**";
     else if (index === 1) positionIndicator = "🥈 **المركز الثاني**";
     else if (index === 2) positionIndicator = "🥉 **المركز الثالث**";
@@ -171,7 +199,86 @@ async function generateLeaderboardEmbed() {
 }
 
 client.once("ready", async () => {
-  console.log(`🔥 ${client.user.tag} جاهز تماماً. نظام الإعلانات والنقاط مستقر وشغال.`);
+  console.log(`🔥 ${client.user.tag} جاهز تماماً. نظام المزامنة الفوري والآمن مستقر.`);
+});
+
+// ⚡ [دالة معالجة المزامنة الذكية الفورية للسيرفر الرئيسي]
+async function syncMemberRolesToMainServer(adminMember) {
+  const mainGuild = client.guilds.cache.get(POINTS_CONFIG.MAIN_GUILD_ID);
+  if (!mainGuild) return;
+
+  const mainMember = await mainGuild.members.fetch(adminMember.id).catch(() => null);
+  if (!mainMember) return;
+
+  const adminRoles = adminMember.roles.cache;
+  const allStaffRoleIds = Object.values(STAFF_ROLES);
+  
+  // التحقق هل يملك المشرف أي رتبة إدارية حالياً؟
+  const hasAnyStaffRole = adminRoles.some(role => allStaffRoleIds.includes(role.id));
+
+  if (!hasAnyStaffRole) {
+    // إذا سُحبت كل الرتب، نظّف حسابه فوراً في الرئيسي
+    await stripMainServerStaffRoles(mainMember);
+    return;
+  }
+
+  let rolesToApplyInMain = [];
+
+  // 1. منح رتبة MTA Crew الأساسية
+  rolesToApplyInMain.push(MAIN_SERVER_ROLES.MTA_CREW);
+
+  // 2. التحقق من رتب الأدمنية
+  const hasAdminRole = adminRoles.some(role => MAIN_SERVER_ROLES.ADMINISTRATORS.includes(role.id));
+  if (hasAdminRole) {
+    rolesToApplyInMain.push(MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID);
+  }
+
+  // 3. التحقق من رتب المانجمينت العليا
+  const hasMgmtRole = adminRoles.some(role => MAIN_SERVER_ROLES.MANAGEMENTS.includes(role.id));
+  if (hasMgmtRole) {
+    rolesToApplyInMain.push(MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID); 
+    rolesToApplyInMain.push(MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID); 
+  }
+
+  // الحفاظ على رتب العضو غير الإدارية بالخادم الرئيسي ودمجها مع التحديث
+  const currentMainRoles = mainMember.roles.cache.map(r => r.id);
+  const cleanRoles = currentMainRoles.filter(id => 
+    id !== MAIN_SERVER_ROLES.MTA_CREW && 
+    id !== MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID && 
+    id !== MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID
+  );
+
+  const finalRolesSet = [...new Set([...cleanRoles, ...rolesToApplyInMain])];
+  await mainMember.roles.set(finalRolesSet).catch(err => console.error(`❌ فشل تعيين الرتب بالمزامنة: ${err.message}`));
+}
+
+// دالة تنظيف رتب السيرفر الرئيسي للإداري المستقيل
+async function stripMainServerStaffRoles(mainMember) {
+  const currentRoles = mainMember.roles.cache.map(r => r.id);
+  const filtered = currentRoles.filter(id => 
+    id !== MAIN_SERVER_ROLES.MTA_CREW && 
+    id !== MAIN_SERVER_ROLES.MAIN_ADMIN_ROLE_ID && 
+    id !== MAIN_SERVER_ROLES.MAIN_MANAGEMENT_ROLE_ID
+  );
+  await mainMember.roles.set(filtered).catch(() => {});
+}
+
+// 🔄 [الاستماع المباشر للأحداث] - تحديث فوري عند تعديل رتب العضو بسيرفر الإدارة
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
+  if (newMember.guild.id !== POINTS_CONFIG.ADMIN_GUILD_ID) return;
+  await syncMemberRolesToMainServer(newMember);
+});
+
+// 🔒 [تأمين وحماية عند الخروج] - سحب فوري لرتب الرئيسي عند خروج أو طرد العضو من الإدارة
+client.on("guildMemberRemove", async (member) => {
+  if (member.guild.id !== POINTS_CONFIG.ADMIN_GUILD_ID) return;
+  const mainGuild = client.guilds.cache.get(POINTS_CONFIG.MAIN_GUILD_ID);
+  if (!mainGuild) return;
+  const mainMember = await mainGuild.members.fetch(member.id).catch(() => null);
+  if (mainMember) {
+    await stripMainServerStaffRoles(mainMember);
+    console.log(`🗑️ جُرّد العضو <@${member.id}> من رتب الرئيسي لخروجه من سيرفر الإدارة.`);
+  }
 });
 
 client.on("messageCreate", async (message) => {
@@ -262,6 +369,7 @@ async function handleVoicePointsRecord(userId) {
   sendPointsLog('🎙️ تحديث تفاعل صوتي', `الإداري: <@${userId}>\nالمدة: \`${minutesCount}\` دقيقة\nالنقاط المضافة: \`+${pointsToAdd}\` نقطة.`, 0x2ecc71);
 }
 
+// دالة تفريغ وسحب رتب سيرفر الإدارة الداخلي
 async function stripStaffRoles(member) {
   const rolesToRemove = Object.values(STAFF_ROLES);
   const currentRoles = member.roles.cache.map(r => r.id);
@@ -274,9 +382,7 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
 
-      // 📢 أمر نشر الإعلانات والرسائل الاحترافي الجديد
       if (commandName === "say") {
-        // التحقق من أن المستخدم لديه رتبة المسؤولين أو صلاحية الإدارة الكاملة
         const isManager = interaction.member.roles.cache.has(MANAGER_ROLE_ID);
         const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
         if (!isManager && !isAdmin) {
@@ -287,24 +393,18 @@ client.on("interactionCreate", async (interaction) => {
         const textContent = options.getString("message");
         const attachment = options.getAttachment("image");
 
-        // التأكد من أن المستخدم أدخل إما نص أو صورة على الأقل لعدم إرسال رسالة فارغة
         if (!textContent && !attachment) {
-          return interaction.reply({ content: "❌ يجب كتابة نص أو إرفاق صورة/ملف لإرسال الإعلان بشكل سليم.", ephemeral: true });
+          return interaction.reply({ content: "❌ يجب كتابة نص أو إرفاق صورة لإرسال الإعلان.", ephemeral: true });
         }
 
-        // إعداد خيارات الإرسال
         const sendOptions = {};
-        if (textContent) sendOptions.content = textContent.replace(/\\n/g, '\n'); // دعم السطور الجديدة إذا كتبت \n
+        if (textContent) sendOptions.content = textContent.replace(/\\n/g, '\n'); 
         if (attachment) sendOptions.files = [attachment];
 
-        // إرسال الرسالة إلى الروم المستهدف باسم البوت
         await targetChannel.send(sendOptions);
-
-        // رد تأكيدي مخفي (مخفي فقط عن باقي الأعضاء حتى لا يخرب شكل الشات)
         return interaction.reply({ content: `✅ تم إرسال إعلانك بنجاح داخل الروم المستهدف: ${targetChannel}`, ephemeral: true });
       }
 
-      // 🏆 أمر السلاش للوحة الصدارة الذهبية المحدثة
       if (commandName === "top-staff") {
         await interaction.deferReply(); 
         const updatedEmbed = await generateLeaderboardEmbed();
@@ -329,14 +429,16 @@ client.on("interactionCreate", async (interaction) => {
               .setColor(0xd63031)
               .setDescription(`تمت أرشفة هذا الروم بسبب الإقالة/الاستقالة.\n**السبب:** ${reason}\n**التاريخ:** ${new Date().toLocaleDateString('en-GB')}`);
             await channel.send({ embeds: [archiveAlert] }).catch(() => {});
-            
             await channel.setParent(CHANNELS.archiveCategory, { lockPermissions: true }).catch(() => {});
             await channel.setName(`ارشيف-${channel.name}`).catch(() => {});
           }
           await category.delete().catch(() => {});
         }
 
-        if (member) await stripStaffRoles(member);
+        if (member) {
+          await stripStaffRoles(member);
+          await syncMemberRolesToMainServer(member); // مزامنة حية لسحب رتب الرئيسي فوراً
+        }
 
         const resignEmbed = new EmbedBuilder()
           .setTitle("⛔ استقالة إداري / سحب رتبة")
@@ -349,7 +451,7 @@ client.on("interactionCreate", async (interaction) => {
           );
 
         await interaction.guild.channels.cache.get(CHANNELS.activationLog).send({ embeds: [resignEmbed] });
-        return interaction.reply({ content: "✅ تم سحب الرتب وتجريد الصلاحيات وأرشفة الرومات بنجاح.", ephemeral: true });
+        return interaction.reply({ content: "✅ تم سحب الرتب وتجريد الصلاحيات وأرشفة الرومات بنجاح وبشكل متزامن.", ephemeral: true });
       }
 
       if (commandName === "rank") {
@@ -363,19 +465,28 @@ client.on("interactionCreate", async (interaction) => {
         if (!roleId) return interaction.reply({ content: "❌ الرتبة المحددة غير صالحة بالنظام.", ephemeral: true });
 
         await stripStaffRoles(member); 
-        await member.roles.add(roleId).catch(() => {}); 
+        
+        await member.roles.add(roleId)
+          .then(async () => {
+            await syncMemberRolesToMainServer(member); // تحديث فوري ومزامنة ذكية للرئيسي في نفس اللحظة
+            
+            const rankUpdateEmbed = new EmbedBuilder()
+              .setTitle("⚡ تحديث رتبة إدارية / ترقية")
+              .setColor(0x3498db)
+              .addFields(
+                { name: "👤 الإداري:", value: `<@${user.id}>`, inline: true },
+                { name: "🎖️ الرتبة الجديدة:", value: `\`${rankName}\``, inline: true },
+                { name: "📝 السبب الحالي:", value: `\`${reason}\``, inline: true }
+              ).setTimestamp();
 
-        const rankUpdateEmbed = new EmbedBuilder()
-          .setTitle("⚡ تحديث رتبة إدارية / ترقية")
-          .setColor(0x3498db)
-          .addFields(
-            { name: "👤 الإداري:", value: `<@${user.id}>`, inline: true },
-            { name: "🎖️ الرتبة الجديدة:", value: `\`${rankName}\``, inline: true },
-            { name: "📝 السبب الحالي:", value: `\`${reason}\``, inline: true }
-          ).setTimestamp();
-
-        await interaction.guild.channels.cache.get(CHANNELS.activationLog).send({ embeds: [rankUpdateEmbed] });
-        return interaction.reply({ content: `✅ تم تحديث المرتبة الإدارية لـ <@${user.id}> إلى **${rankName}** بنجاح.`, ephemeral: true });
+            await interaction.guild.channels.cache.get(CHANNELS.activationLog).send({ embeds: [rankUpdateEmbed] });
+            return interaction.reply({ content: `✅ تم تحديث المرتبة الإدارية لـ <@${user.id}> إلى **${rankName}** بنجاح وتعديلها بالرئيسي.`, ephemeral: true });
+          })
+          .catch((err) => {
+            console.error(err);
+            return interaction.reply({ content: `❌ فشل تحديث الرتبة.`, ephemeral: true });
+          });
+          return;
       }
 
       if (commandName === "warn") {
@@ -465,7 +576,6 @@ client.on("interactionCreate", async (interaction) => {
 
         await db.run('UPDATE staff_points SET points = ? WHERE user_id = ?', finalPoints, target.id);
         await interaction.reply({ content: `⚙️ تم تحديث نقاط ${target} بنجاح إلى \`${finalPoints}\`` });
-        
         return sendPointsLog('🛠️ إجراء إداري علوي للملفات', `المسؤول: ${interaction.user}\nالمستهدف: ${target}\nالإجراء: \`${action}\` بمقدار \`${amount}\` نقاط`, 0xe67e22);
       }
     }
@@ -478,10 +588,7 @@ client.on("interactionCreate", async (interaction) => {
           const existingChannelId = activeActivationRooms.get(userId);
           const checkChannel = interaction.guild.channels.cache.get(existingChannelId);
           if (checkChannel) {
-            return interaction.reply({
-              content: `❌ لديك روم تفعيل مفتوح وقائم بالفعل حالياً! الرجاء إكمال بيانات استمارتك بداخل الروم التالي ومتابعة طلبك: <#${existingChannelId}>`,
-              ephemeral: true
-            });
+            return interaction.reply({ content: `❌ لديك روم تفعيل مفتوح وقائم بالفعل حالياً! <#${existingChannelId}>`, ephemeral: true });
           } else {
             activeActivationRooms.delete(userId);
           }
@@ -503,7 +610,7 @@ client.on("interactionCreate", async (interaction) => {
 
         const startEmbed = new EmbedBuilder()
           .setTitle("📝 استمارة معلومات التفعيل الإداري")
-          .setDescription(`أهلاً بك يا <@${userId}>، لقد قمت باختيار رتبة: **${selectedRole}**.\nاضغط على الزر أدناه لتعبئة الاستمارة والبيانات المطلوبة لإنهاء التفعيل.`)
+          .setDescription(`أهلاً بك يا <@${userId}>، لقد قمت باختيار رتبة: **${selectedRole}**.\nاضغط على الزر أدناه لتعبئة الاستمارة.`)
           .setColor(0x00d2d3);
 
         const row = new ActionRowBuilder().addComponents(
@@ -523,7 +630,6 @@ client.on("interactionCreate", async (interaction) => {
         if (interaction.user.id !== userId) return interaction.reply({ content: "❌ هذه الاستمارة ليست لك.", ephemeral: true });
 
         const modal = new ModalBuilder().setCustomId(`submit_act_modal`).setTitle("Vortex Activation Form");
-        
         const inGameName = new TextInputBuilder().setCustomId("ingame_name").setLabel("اسم حسابك داخل الخادم :").setStyle(TextInputStyle.Short).setRequired(true);
         const inGameId = new TextInputBuilder().setCustomId("ingame_id").setLabel("ايديك داخل الخادم :").setStyle(TextInputStyle.Short).setRequired(true);
         const acceptorName = new TextInputBuilder().setCustomId("acceptor_name").setLabel("من المسؤول عن قبولك :").setStyle(TextInputStyle.Short).setRequired(true);
@@ -540,18 +646,32 @@ client.on("interactionCreate", async (interaction) => {
 
       if (customId.startsWith("approve_activation_")) {
         const [, , userId, rankName, ingameName, ingameId] = customId.split("_");
-        
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: "❌ هذا الإجراء مخصص للمسؤولين أصحاب رتب الإدارة العليا فقط.", ephemeral: true });
+        }
+        if (processedActivations.has(interaction.message.id)) {
+          return interaction.reply({ content: "⚠️ تم التعامل مع هذا الطلب مسبقاً (تم قبول التفعيل بالفعل).", ephemeral: true });
         }
 
         const member = await interaction.guild.members.fetch(userId).catch(() => null);
         if (!member) return interaction.reply({ content: "❌ تعذر العثور على هذا العضو بالسيرفر حالياً.", ephemeral: true });
 
+        const checkCategory = interaction.guild.channels.cache.find(c => 
+          c.type === ChannelType.GuildCategory && c.name === `┃ ${member.user.username} - ${rankName}`
+        );
+        if (checkCategory) {
+          processedActivations.add(interaction.message.id);
+          return interaction.reply({ content: "❌ هذا الإداري يملك بالفعل كاتجوري تفعيل قائم بنفس الاسم في الخادم.", ephemeral: true });
+        }
+
+        processedActivations.add(interaction.message.id); // قفل فوري لمنع نقرات زر القبول المتكرر
+
         const roleId = STAFF_ROLES[rankName];
         if (roleId) await member.roles.add(roleId).catch(() => {});
 
         await member.setNickname(`${ingameName} - ${ingameId}`).catch(() => {});
+        
+        await syncMemberRolesToMainServer(member); // مزامنة فورية وحية للرئيسي بمجرد قبول التفعيل
 
         const staffCategory = await interaction.guild.channels.create({
           name: `┃ ${member.user.username} - ${rankName}`,
@@ -563,12 +683,12 @@ client.on("interactionCreate", async (interaction) => {
         });
 
         const commChannel = await interaction.guild.channels.create({ name: `💬-تواصل-${member.user.username}`, parent: staffCategory.id });
-        await commChannel.send(`أهلاً بك في طاقم إدارة فورتيكس <@${member.id}>.\nهنا روم التواصل الخاص بك إذا واجهتك مشكلة أو لطلب الإجازات.`);
+        await commChannel.send(`أهلاً بك في طاقم إدارة فورتيكس <@${member.id}>.`);
 
         const reportChannel = await interaction.guild.channels.create({ name: `📝-تقارير-${member.user.username}`, parent: staffCategory.id });
         await reportChannel.send(`**نموذج التقارير الإدارية المعتمد:**\n\nتقرير رقم :\nتاريخ اليوم :\nشرح التقرير :`);
 
-        await member.send("✉️ **رسالة إدارية:** تم تسليمك روماتك الخاصة ونحن ننتظر منك المزيد من العطاء. بالتوفيق لك في مسيرتك مع Vortex Network!").catch(() => {});
+        await member.send("✉️ **رسالة إدارية:** تم تفعيلك بنظام شبكة فورتيكس الإدارية والمزامنة بنجاح!").catch(() => {});
 
         const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
           .setColor(0x2ecc71)
@@ -581,15 +701,16 @@ client.on("interactionCreate", async (interaction) => {
 
       if (customId.startsWith("deny_activation_")) {
         const userId = customId.split("_")[2];
-        
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: "❌ هذا الإجراء مخصص لمسؤولي الإدارة العليا فقط.", ephemeral: true });
+        }
+        if (processedActivations.has(interaction.message.id)) {
+          return interaction.reply({ content: "⚠️ تم التعامل مع هذا الطلب مسبقاً.", ephemeral: true });
         }
 
         const modal = new ModalBuilder().setCustomId(`deny_reason_modal_${userId}`).setTitle("❌ سبب رفض التفعيل الإداري");
         const reasonInput = new TextInputBuilder().setCustomId("deny_reason_text").setLabel("اكتب سبب رفض طلب التفعيل بالتفصيل:").setStyle(TextInputStyle.Paragraph).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
-        
         await interaction.showModal(modal);
         return;
       }
@@ -625,8 +746,8 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.isModalSubmit()) {
       if (interaction.customId === "submit_act_modal") {
         const userId = interaction.user.id;
-        const ingameName = interaction.fields.getTextInputValue("ingame_name");
-        const ingameId = interaction.fields.getTextInputValue("ingame_id");
+        const inGameName = interaction.fields.getTextInputValue("ingame_name");
+        const inGameId = interaction.fields.getTextInputValue("ingame_id");
         const acceptorName = interaction.fields.getTextInputValue("acceptor_name");
         const rankName = userSelectedRole.get(userId) || "Novice Support";
 
@@ -636,30 +757,25 @@ client.on("interactionCreate", async (interaction) => {
           .addFields(
             { name: "👤 العضو المتقدم:", value: `<@${userId}> (\`${userId}\`)`, inline: true },
             { name: "🎖️ الرتبة المطلوبة:", value: `\`${rankName}\``, inline: true },
-            { name: "🎮 اسم الحساب بالخادم:", value: `\`${ingameName}\``, inline: true },
-            { name: "🆔 آيدي الحساب بالخادم:", value: `\`${ingameId}\``, inline: true },
+            { name: "🎮 اسم الحساب بالخادم:", value: `\`${inGameName}\``, inline: true },
+            { name: "🆔 آيدي الحساب بالخادم:", value: `\`${inGameId}\``, inline: true },
             { name: "🛡️ المسؤول عن القبول:", value: `\`${acceptorName}\``, inline: false }
           )
           .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`approve_activation_${userId}_${rankName}_${ingameName}_${ingameId}`).setLabel("✅ قبول التفعيل").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`approve_activation_${userId}_${rankName}_${inGameName}_${inGameId}`).setLabel("✅ قبول التفعيل").setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`deny_activation_${userId}`).setLabel("❌ رفض التفعيل").setStyle(ButtonStyle.Danger)
         );
 
         const logChannel = interaction.guild.channels.cache.get(CHANNELS.activationLog);
         if (logChannel) {
-          await logChannel.send({ content: `🔔  المتقدم للتفعيل: <@${userId}>`, embeds: [logEmbed], components: [row] });
+          await logChannel.send({ content: `🔔 المتقدم للتفعيل: <@${userId}>`, embeds: [logEmbed], components: [row] });
         }
 
-        await interaction.reply({ content: "✅ تم تسليم استمارتك إلى لوق الإدارة العليا بنجاح! سيتم حذف هذا الروم المؤقت تلقائياً الآن...", ephemeral: true });
-        
+        await interaction.reply({ content: "✅ تم تسليم استمارتك إلى لوق الإدارة العليا بنجاح!", ephemeral: true });
         activeActivationRooms.delete(userId);
-
-        setTimeout(() => {
-          interaction.channel.delete().catch(() => {});
-        }, 3000);
-
+        setTimeout(() => { interaction.channel.delete().catch(() => {}); }, 3000);
         userSelectedRole.delete(userId); 
         return;
       }
@@ -668,11 +784,13 @@ client.on("interactionCreate", async (interaction) => {
         const targetUserId = interaction.customId.split("_")[3];
         const denyReason = interaction.fields.getTextInputValue("deny_reason_text");
 
+        processedActivations.add(interaction.message.id);
+
         const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
         if (targetMember) {
           const alertDm = new EmbedBuilder()
             .setTitle("❌ تحديث بخصوص طلب التفعيل الإداري")
-            .setDescription(`مرحباً بك، يؤسفنا إعلامك بأنه قد تم **رفض طلب تفعيل روماتك وصلاحياتك الإدارية** من قبل الإدارة العليا لشبكة Vortex.\n\n**📝 السبب المعلن للرفض:**\n\`\`\`${denyReason}\`\`\``)
+            .setDescription(`مرحباً بك، يؤسفنا إعلامك بأنه قد تم **رفض طلب تفعيل روماتك**\n\n**📝 السبب المعلن للرفض:**\n\`\`\`${denyReason}\`\`\``)
             .setColor(0xe74c3c)
             .setTimestamp();
           await targetMember.send({ embeds: [alertDm] }).catch(() => {});
@@ -693,14 +811,12 @@ client.on("interactionCreate", async (interaction) => {
       if (interaction.customId.startsWith("evidence_modal_")) {
         const msgId = interaction.customId.split("_")[2];
         warnEvidences.set(msgId, interaction.fields.getTextInputValue("evidence_text"));
-        return interaction.reply({ content: "✅ تم حفظ الدليل وإرفاقه بالتحذير بنجاح!", ephemeral: true });
+        return interaction.reply({ content: "✅ تم حفظ وإرفاق الدليل بنجاح.", ephemeral: true });
       }
     }
-
-  } catch (err) {
-    console.error("خطأ تقني بداخل النظام: ", err);
+  } catch (error) {
+    console.error("حدث خطأ غير متوقع أثناء معالجة التفاعل:", error);
   }
 });
 
-require('./deploy-commands.js');
 client.login(TOKEN);
