@@ -9,7 +9,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   StringSelectMenuBuilder,
-  ModalBuilder,
+  ModalBuilder
   TextInputBuilder,
   TextInputStyle,
   SlashCommandBuilder,
